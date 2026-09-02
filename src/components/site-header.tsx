@@ -13,7 +13,7 @@ export function SiteHeader({ backHref, backLabel = "Volver al menú" }: { backHr
       <div className="header-side">
         {backHref && <Link className="header-back" href={backHref}><ArrowLeft size={18} /> {backLabel}</Link>}
       </div>
-      <Link href="/" aria-label="La Rocota, inicio"><Image className="brand-logo" src="/brand/la-rocota-logo.png" alt="La Rocota" width={420} height={140} /></Link>
+      <Link href="/" aria-label="La Rocota, inicio"><Image className="brand-logo" src="/brand/la-rocota-logo-final.png" alt="La Rocota" width={668} height={340} /></Link>
       <div className="top-actions header-side header-side-right">
         <Link className="ghost-button" href="/account"><UserRound size={18} /> Mi cuenta</Link>
         <ThemeToggle />

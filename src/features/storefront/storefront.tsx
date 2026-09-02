@@ -11,7 +11,7 @@ import { cartTotal, useCart } from "@/features/cart/cart-store";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api, productImageUrl, type CatalogCycle, type ModifierGroup, type ModifierSelection } from "@/lib/api/client";
 
-const PRODUCT_PLACEHOLDER = "/brand/la-rocota-logo.png";
+const PRODUCT_PLACEHOLDER = "/brand/la-rocota-logo-final.png";
 
 type StoreProduct = { id: string; category: string; name: string; description: string; price: number; image: string | null; imageAlt: string; badge: string | null; available: number; modifierGroups: ModifierGroup[] };
 
@@ -57,6 +57,20 @@ export function Storefront() {
     }).finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
   }, [setCycleId]);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !imageViewerOpen) setSelectedProduct(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [selectedProduct, imageViewerOpen]);
 
   function openProduct(product: StoreProduct) {
     setSelectedProduct(product);
@@ -110,7 +124,7 @@ export function Storefront() {
     <main className="site-shell">
       <header className="topbar">
         <a href="#inicio" aria-label="La Rocota, inicio">
-          <Image className="brand-logo" src="/brand/la-rocota-logo.png" alt="La Rocota" width={420} height={140} />
+          <Image className="brand-logo" src="/brand/la-rocota-logo-final.png" alt="La Rocota" width={668} height={340} />
         </a>
         <div className="top-actions">
           <Link className="ghost-button" href="/account"><UserRound size={18} /> Mi cuenta</Link>
@@ -153,7 +167,7 @@ export function Storefront() {
           {products.filter((product) => activeCategory === 'Todo' || product.category === activeCategory).map((product) => (
             <article className="product-card" key={product.id}>
               <div className="product-visual">
-                {product.image ? <Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 650px) 100vw, 33vw" unoptimized /> : <div className="brand-product-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={220} height={74} /></div>}
+                {product.image ? <Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 650px) 100vw, 33vw" unoptimized /> : <div className="brand-product-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={334} height={170} /></div>}
                 {product.badge && <span className="product-badge">{product.badge}</span>}
               </div>
               <div className="product-copy">
@@ -204,7 +218,7 @@ export function Storefront() {
       {selectedProduct && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelectedProduct(null)}>
           <section className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-title">
-            <div className="modal-image">{selectedProduct.image ? <button className="modal-image-button" type="button" aria-label={`Ver imagen ampliada de ${selectedProduct.name}`} onClick={() => setImageViewerOpen(true)}><Image src={selectedProduct.image} alt={selectedProduct.imageAlt} fill sizes="(max-width: 650px) 100vw, 40vw" unoptimized /><span aria-hidden="true"><Maximize2 size={18} /></span></button> : <div className="brand-product-placeholder modal-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={280} height={94} /></div>}</div>
+            <div className="modal-image">{selectedProduct.image ? <button className="modal-image-button" type="button" aria-label={`Ver imagen ampliada de ${selectedProduct.name}`} onClick={() => setImageViewerOpen(true)}><Image src={selectedProduct.image} alt={selectedProduct.imageAlt} fill sizes="(max-width: 650px) 100vw, 40vw" unoptimized /><span aria-hidden="true"><Maximize2 size={18} /></span></button> : <div className="brand-product-placeholder modal-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={334} height={170} /></div>}</div>
             <div className="modal-panel">
               <div className="modal-toolbar"><span>Personaliza tu plato</span><button className="close-button product-modal-close" type="button" aria-label="Cerrar personalización" onClick={() => setSelectedProduct(null)}><X size={21} /></button></div>
               <div className="modal-content">

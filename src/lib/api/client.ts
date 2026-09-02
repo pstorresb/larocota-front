@@ -41,10 +41,16 @@ export function productImageUrl(pathOrKey: string | null | undefined) {
 
 export function paymentProofUrl(proofId: string) { return `${API_URL}/payment-proofs/${encodeURIComponent(proofId)}/file`; }
 
+export function googleAuthUrl(next = "/account") {
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
+  return `${API_URL}/auth/google?next=${encodeURIComponent(safeNext)}`;
+}
+
 export const api = {
   catalog: () => request<{ cycle: CatalogCycle | null; categories: CatalogCategory[]; products: CatalogProduct[] }>("/catalog"),
   login: (input: { email: string; password: string }) => request<{ user: AuthUser }>("/auth/login", { method: "POST", body: JSON.stringify(input) }),
   me: () => request<{ user: AuthUser }>("/auth/me"),
+  updateProfile: (input: { firstName: string; lastName: string; phone: string }) => request<{ user: AuthUser }>("/auth/profile", { method: "PATCH", body: JSON.stringify(input) }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   myOrders: () => request<{ orders: CustomerOrder[] }>("/orders/mine"),
   adminDashboard: () => request<{ cycle: { id: string; name: string; globalCapacity: number | null } | null; metrics: { orders: number; sales: string; averageTicket: string; pendingPayments: number }; products: { name: string; units: number; capacity: number }[] }>("/admin/dashboard"),

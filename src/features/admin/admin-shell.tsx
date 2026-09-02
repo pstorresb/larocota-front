@@ -52,7 +52,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
-        <Link className="admin-logo" href="/" aria-label="Ir a la tienda"><Image src="/brand/la-rocota-logo.png" alt="La Rocota" width={420} height={140} /></Link>
+        <Link className="admin-logo" href="/" aria-label="Ir a la tienda"><Image src="/brand/la-rocota-logo-final.png" alt="La Rocota" width={668} height={340} /></Link>
         <span className="admin-label">Administración</span>
         <nav aria-label="Administración">
           {nav.map(([label, href, Icon]) => {

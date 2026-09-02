@@ -2,9 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { api, ApiError } from "@/lib/api/client";
+import { api, ApiError, googleAuthUrl } from "@/lib/api/client";
 
-export function LoginForm() {
+const googleErrors: Record<string, string> = {
+  admin_link_blocked: "Por seguridad, las cuentas administrativas deben ingresar con contraseña.",
+  account_disabled: "Esta cuenta se encuentra desactivada.",
+  cancelled_or_invalid: "El acceso con Google fue cancelado o expiró. Inténtalo nuevamente.",
+  authentication_failed: "No pudimos validar tu cuenta de Google.",
+  token_exchange_failed: "Google no pudo completar el acceso. Inténtalo nuevamente.",
+};
+
+export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: string; googleError?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,12 +27,20 @@ export function LoginForm() {
     finally { setLoading(false); }
   }
   return (
-    <form className="auth-form" onSubmit={submit}>
+    <>
+      <a className="google-auth-button" href={googleAuthUrl(nextPath)}>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.8 3-4.3 3-7.3Z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4L15.4 17c-.9.6-2 1-3.4 1a5.8 5.8 0 0 1-5.5-4H3.2v2.6A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.5 14a6 6 0 0 1 0-3.9V7.5H3.2a10 10 0 0 0 0 9.1L6.5 14Z"/><path fill="#EA4335" d="M12 6.1c1.5 0 2.8.5 3.8 1.5l2.9-2.8A9.7 9.7 0 0 0 3.2 7.5l3.3 2.6A5.8 5.8 0 0 1 12 6.1Z"/></svg>
+        Continuar con Google
+      </a>
+      <div className="auth-divider"><span>o ingresa con tu contraseña</span></div>
+      {googleError && <p className="form-error" role="alert">{googleErrors[googleError] ?? "No pudimos completar el acceso con Google."}</p>}
+      <form className="auth-form" onSubmit={submit}>
       <label className="field">Correo electrónico<input type="email" name="email" required autoComplete="email" placeholder="tu@correo.com" /></label>
       <label className="field">Contraseña<input type="password" name="password" required minLength={10} autoComplete="current-password" placeholder="••••••••" /></label>
       <div className="auth-row"><label className="remember"><input type="checkbox" /> Recordarme</label><a href="#">Olvidé mi contraseña</a></div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <button className="place-order" type="submit" disabled={loading}>{loading ? "Ingresando…" : "Iniciar sesión"}</button>
-    </form>
+      </form>
+    </>
   );
 }
