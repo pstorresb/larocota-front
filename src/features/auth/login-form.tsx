@@ -11,10 +11,11 @@ function destination(role: string) { return role === "admin" || role === "supera
 
 export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: string; googleError?: string }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "signup" | "verify">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "verify" | "resetRequest" | "resetVerify">("login");
   const [error, setError] = useState(googleError ? (googleErrors[googleError] ?? "No pudimos completar el acceso con Google.") : "");
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
   const message = (reason: unknown) => reason instanceof ApiError ? reason.message : "No pudimos conectar con el servicio.";
 
   async function login(event: FormEvent<HTMLFormElement>) {
@@ -34,6 +35,33 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
     try { const { user } = await api.verifySignupCode({ email, code: String(data.get("code")).trim() }); router.replace(destination(user.role)); }
     catch (reason) { setError(message(reason)); } finally { setLoading(false); }
   }
+  async function requestReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget); const requestedEmail = String(data.get("email")).trim().toLowerCase();
+    try { await api.requestPasswordReset({ email: requestedEmail }); setResetEmail(requestedEmail); setMode("resetVerify"); }
+    catch (reason) { setError(message(reason)); } finally { setLoading(false); }
+  }
+  async function verifyReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget);
+    try { const { user } = await api.verifyPasswordReset({ email: resetEmail, code: String(data.get("code")).trim(), password: String(data.get("password")) }); router.replace(destination(user.role)); }
+    catch (reason) { setError(message(reason)); } finally { setLoading(false); }
+  }
+
+  if (mode === "resetRequest") return <form className="auth-form" onSubmit={requestReset}>
+    <div className="auth-verification-copy"><strong>Recupera tu contraseña</strong><span>Te enviaremos un PIN si existe una cuenta con contraseña para ese correo.</span></div>
+    <label className="field">Correo electrónico<input type="email" name="email" required autoComplete="email" placeholder="tu@correo.com" autoFocus /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <button className="place-order" type="submit" disabled={loading}>{loading ? "Enviando PIN…" : "Enviar PIN"}</button>
+    <button className="auth-text-button" type="button" onClick={() => { setError(""); setMode("login"); }}>Volver a iniciar sesión</button>
+  </form>;
+
+  if (mode === "resetVerify") return <form className="auth-form" onSubmit={verifyReset}>
+    <div className="auth-verification-copy"><strong>Revisa tu correo</strong><span>Ingresa el PIN enviado a <b>{resetEmail}</b> y elige tu nueva contraseña.</span></div>
+    <label className="field">Código de confirmación<input className="pin-input" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required autoFocus placeholder="000000" /></label>
+    <label className="field">Nueva contraseña<input type="password" name="password" required minLength={10} autoComplete="new-password" placeholder="Mínimo 10 caracteres" /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <button className="place-order" type="submit" disabled={loading}>{loading ? "Actualizando…" : "Restablecer contraseña"}</button>
+    <button className="auth-text-button" type="button" onClick={() => { setError(""); setMode("resetRequest"); }}>Usar otro correo</button>
+  </form>;
 
   if (mode === "verify") return <form className="auth-form" onSubmit={verifyCode}>
     <div className="auth-verification-copy"><strong>Revisa tu correo</strong><span>Enviamos un PIN de seis dígitos a <b>{email}</b>. Vence en 10 minutos.</span></div>
@@ -48,7 +76,7 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
     <div className="auth-divider"><span>o {mode === "login" ? "ingresa con tu contraseña" : "crea tu cuenta con correo"}</span></div>
     {mode === "login" ? <form className="auth-form" onSubmit={login}>
       <label className="field">Correo electrónico<input type="email" name="email" required autoComplete="email" placeholder="tu@correo.com" /></label><label className="field">Contraseña<input type="password" name="password" required minLength={10} autoComplete="current-password" placeholder="••••••••" /></label>
-      <div className="auth-row"><label className="remember"><input type="checkbox" /> Recordarme</label><button type="button" className="auth-link-button">Olvidé mi contraseña</button></div>
+      <div className="auth-row"><label className="remember"><input type="checkbox" /> Recordarme</label><button type="button" className="auth-link-button" onClick={() => { setError(""); setMode("resetRequest"); }}>Olvidé mi contraseña</button></div>
       {error && <p className="form-error" role="alert">{error}</p>}<button className="place-order" type="submit" disabled={loading}>{loading ? "Ingresando…" : "Iniciar sesión"}</button><button className="auth-text-button" type="button" onClick={() => { setError(""); setMode("signup"); }}>Crear cuenta con correo</button>
     </form> : <form className="auth-form" onSubmit={requestCode}>
       <div className="auth-verification-copy"><strong>Crea tu cuenta</strong><span>Te enviaremos un PIN a tu correo para confirmar que es tuyo.</span></div>

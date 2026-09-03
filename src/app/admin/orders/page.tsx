@@ -15,6 +15,7 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [reason, setReason] = useState("");
   const [proofObjectUrl, setProofObjectUrl] = useState("");
   const [proofLoadError, setProofLoadError] = useState("");
@@ -62,6 +63,22 @@ export default function AdminOrdersPage() {
     finally { setReviewing(false); }
   }
 
+  function nextStatus(order: AdminOrderDetail) {
+    if (order.status === "confirmed") return { status: "in_preparation", label: "Iniciar preparación" };
+    if (order.status === "in_preparation") return { status: "ready", label: order.fulfillmentType === "pickup" ? "Marcar listo para retiro" : "Marcar listo para entrega" };
+    if (order.status === "ready") return order.fulfillmentType === "delivery" ? { status: "out_for_delivery", label: "Marcar en camino" } : { status: "delivered", label: "Marcar entregado" };
+    if (order.status === "out_for_delivery") return { status: "delivered", label: "Marcar entregado" };
+    return null;
+  }
+  async function advanceOrder() {
+    if (!selected) return;
+    const next = nextStatus(selected); if (!next) return;
+    setUpdatingStatus(true); setDetailError("");
+    try { await api.updateOrderStatus(selected.id, { status: next.status }); setSelected((await api.adminOrder(selected.id)).order); await load(); }
+    catch (cause) { setDetailError(cause instanceof ApiError ? cause.message : "No pudimos actualizar el estado."); }
+    finally { setUpdatingStatus(false); }
+  }
+
   const canReview = selected?.status === "payment_review" && selected.proof?.status === "under_review";
   const mapLink = selected?.addressSnapshot?.latitude !== undefined && selected.addressSnapshot.longitude !== undefined ? `https://www.openstreetmap.org/?mlat=${selected.addressSnapshot.latitude}&mlon=${selected.addressSnapshot.longitude}#map=17/${selected.addressSnapshot.latitude}/${selected.addressSnapshot.longitude}` : null;
 
@@ -90,6 +107,7 @@ export default function AdminOrdersPage() {
           {!canReview && selected.proof?.status === "approved" && <div className="payment-reviewed-message"><CheckCircle2 size={18} /> Este pago ya fue aprobado y el pedido está confirmado.</div>}
           {detailError && <p className="form-error" role="alert">{detailError}</p>}
         </section>
+        {nextStatus(selected) && <section className="order-detail-section order-progress-section"><h3>Siguiente paso</h3><p>Actualiza el estado operativo. El cliente recibirá un correo cuando corresponda.</p><button className="approve-payment" type="button" disabled={updatingStatus} onClick={() => void advanceOrder()}>{updatingStatus ? "Actualizando…" : nextStatus(selected)?.label}</button></section>}
         {selected.history.length > 0 && <section className="order-detail-section"><h3>Historial</h3><div className="order-history">{selected.history.map((entry) => <div key={entry.id}><span /><p><strong>{statusLabels[entry.toStatus] ?? entry.toStatus}</strong><small>{entry.publicNote || "Estado actualizado"} · {dateTime(entry.createdAt)}{entry.actorName ? ` · ${entry.actorName}` : ""}</small></p></div>)}</div></section>}
       </div>
     </section></div>}
