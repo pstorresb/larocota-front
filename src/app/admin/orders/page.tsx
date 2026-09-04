@@ -2,12 +2,35 @@
 
 import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, Eye, FileCheck2, MapPin, RefreshCw, Search, ShoppingBag, X, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, Eye, FileCheck2, MapPin, MessageCircle, RefreshCw, Search, ShoppingBag, X, XCircle } from "lucide-react";
 import { api, ApiError, paymentProofUrl, type AdminOrder, type AdminOrderDetail } from "@/lib/api/client";
 
 const statusLabels: Record<string, string> = { draft: "Borrador", payment_pending: "Pago pendiente", payment_review: "Pago en revisión", payment_rejected: "Pago rechazado", confirmed: "Confirmado", in_preparation: "En preparación", ready: "Listo", out_for_delivery: "En reparto", delivered: "Entregado", cancelled: "Cancelado" };
 const money = (value: string) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(Number(value));
 const dateTime = (value: string) => new Intl.DateTimeFormat("es-EC", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+
+function whatsappPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (/^0\d{9}$/.test(digits)) return `593${digits.slice(1)}`;
+  if (/^593\d{9}$/.test(digits)) return digits;
+  if (/^9\d{8}$/.test(digits)) return `593${digits}`;
+  return null;
+}
+
+function whatsappMessage(order: AdminOrderDetail) {
+  const customer = order.contactSnapshot.firstName.trim() || "hola";
+  const orderRef = `pedido ${order.orderNumber}`;
+  if (order.status === "payment_pending") return `Hola ${customer}, te escribimos de La Rocota. Recibimos tu ${orderRef}; para confirmarlo, por favor sube el comprobante de transferencia.`;
+  if (order.status === "payment_review") return `Hola ${customer}, recibimos el comprobante de tu ${orderRef}. Estamos verificando la transferencia y te confirmaremos muy pronto.`;
+  if (order.status === "payment_rejected") return `Hola ${customer}, no pudimos confirmar el pago de tu ${orderRef}. Por favor revisa la transferencia o envíanos un nuevo comprobante para ayudarte.`;
+  if (order.status === "confirmed") return `¡Hola ${customer}! Tu pago fue confirmado y tu ${orderRef} ya está confirmado. Pronto empezaremos a prepararlo.`;
+  if (order.status === "in_preparation") return `¡Hola ${customer}! Ya estamos preparando tu ${orderRef} en La Rocota. Te avisaremos apenas esté listo.`;
+  if (order.status === "ready") return order.fulfillmentType === "pickup" ? `¡Hola ${customer}! Tu ${orderRef} ya está listo para retirar. Te esperamos en La Rocota.` : `¡Hola ${customer}! Tu ${orderRef} ya está listo para entrega. En breve saldrá rumbo a tu dirección.`;
+  if (order.status === "out_for_delivery") return `¡Hola ${customer}! Tu ${orderRef} ya va en camino. Mantente pendiente de tu teléfono para coordinar la entrega.`;
+  if (order.status === "delivered") return `¡Hola ${customer}! Registramos la entrega de tu ${orderRef}. Esperamos que lo disfrutes mucho. ¡Gracias por elegir La Rocota!`;
+  if (order.status === "cancelled") return `Hola ${customer}, tu ${orderRef} fue cancelado. Escríbenos por aquí si necesitas ayuda.`;
+  return `Hola ${customer}, te escribimos de La Rocota por tu ${orderRef}. Su estado actual es: ${statusLabels[order.status] ?? order.status}.`;
+}
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -81,6 +104,8 @@ export default function AdminOrdersPage() {
 
   const canReview = selected?.status === "payment_review" && selected.proof?.status === "under_review";
   const mapLink = selected?.addressSnapshot?.latitude !== undefined && selected.addressSnapshot.longitude !== undefined ? `https://www.openstreetmap.org/?mlat=${selected.addressSnapshot.latitude}&mlon=${selected.addressSnapshot.longitude}#map=17/${selected.addressSnapshot.latitude}/${selected.addressSnapshot.longitude}` : null;
+  const customerWhatsApp = selected ? whatsappPhone(selected.contactSnapshot.phone) : null;
+  const whatsappLink = selected && customerWhatsApp ? `https://wa.me/${customerWhatsApp}?text=${encodeURIComponent(whatsappMessage(selected))}` : null;
 
   return <main className="admin-dashboard admin-list-page">
     <div className="admin-heading"><div><p className="section-kicker">Operación</p><h1>Pedidos</h1><p>Revisa pagos, clientes, productos y entregas desde un solo lugar.</p></div><button type="button" onClick={() => void load()}><RefreshCw size={16} /> Actualizar</button></div>
@@ -93,7 +118,7 @@ export default function AdminOrdersPage() {
       <header><div><span className="section-kicker">Pedido</span><h2 id="order-detail-title">{selected.orderNumber}</h2><p>Creado {dateTime(selected.createdAt)}</p></div><button type="button" aria-label="Cerrar" onClick={() => setSelected(null)}><X size={20} /></button></header>
       <div className="order-detail-body">
         <div className="order-detail-top"><div><span>Estado actual</span><strong><i className={`order-status status-${selected.status}`}>{statusLabels[selected.status] ?? selected.status}</i></strong></div><div><span>Total recibido</span><strong>{money(selected.total)}</strong></div><div><span>Entrega</span><strong>{dateTime(selected.fulfillmentAt)}</strong></div></div>
-        <section className="order-detail-section"><h3>Cliente y entrega</h3><div className="order-detail-columns"><dl><div><dt>Cliente</dt><dd>{selected.contactSnapshot.firstName} {selected.contactSnapshot.lastName}</dd></div><div><dt>Correo</dt><dd>{selected.contactSnapshot.email}</dd></div><div><dt>Teléfono</dt><dd>{selected.contactSnapshot.phone}</dd></div></dl><dl><div><dt>Dirección</dt><dd>{selected.addressSnapshot?.addressLine || "Sin dirección registrada"}</dd></div><div><dt>Hora solicitada</dt><dd>{selected.addressSnapshot?.requestedDeliveryTime || "No registrada"}</dd></div><div><dt>Sector</dt><dd>{selected.addressSnapshot?.sector || "—"}</dd></div><div><dt>Referencia</dt><dd>{selected.addressSnapshot?.reference || "—"}</dd></div>{mapLink && <div><dt>Ubicación</dt><dd><a href={mapLink} target="_blank" rel="noreferrer"><MapPin size={13} /> Abrir mapa</a></dd></div>}</dl></div>{selected.customerNotes && <p className="order-customer-note"><b>Nota:</b> {selected.customerNotes}</p>}</section>
+        <section className="order-detail-section"><h3>Cliente y entrega</h3><div className="order-detail-columns"><dl><div><dt>Cliente</dt><dd>{selected.contactSnapshot.firstName} {selected.contactSnapshot.lastName}</dd></div><div><dt>Correo</dt><dd>{selected.contactSnapshot.email}</dd></div><div><dt>Teléfono</dt><dd>{selected.contactSnapshot.phone}</dd></div></dl><dl><div><dt>Dirección</dt><dd>{selected.addressSnapshot?.addressLine || "Sin dirección registrada"}</dd></div><div><dt>Hora solicitada</dt><dd>{selected.addressSnapshot?.requestedDeliveryTime || "No registrada"}</dd></div><div><dt>Sector</dt><dd>{selected.addressSnapshot?.sector || "—"}</dd></div><div><dt>Referencia</dt><dd>{selected.addressSnapshot?.reference || "—"}</dd></div>{mapLink && <div><dt>Ubicación</dt><dd><a href={mapLink} target="_blank" rel="noreferrer"><MapPin size={13} /> Abrir mapa</a></dd></div>}</dl></div><div className="order-contact-actions">{whatsappLink ? <a className="whatsapp-action" href={whatsappLink} target="_blank" rel="noreferrer"><MessageCircle size={17} /> Escribir por WhatsApp</a> : <span className="whatsapp-unavailable">El teléfono no tiene un formato compatible con WhatsApp.</span>}</div>{selected.customerNotes && <p className="order-customer-note"><b>Nota:</b> {selected.customerNotes}</p>}</section>
         <section className="order-detail-section"><h3>Productos</h3><div className="order-detail-items">{selected.items.map((item) => <article key={item.id}><div><strong>{item.quantity} × {item.name}</strong>{item.snapshotJson.modifiers?.length ? <small>{item.snapshotJson.modifiers.map((modifier) => `${modifier.quantity}× ${modifier.optionName}`).join(" · ")}</small> : null}</div><b>{money(item.lineTotal)}</b></article>)}</div><div className="order-detail-totals"><span>Subtotal <b>{money(selected.subtotal)}</b></span><span>IVA <b>{money(selected.taxTotal)}</b></span><strong>Total <b>{money(selected.total)}</b></strong></div></section>
         <section className="order-detail-section payment-review-section"><div className="payment-review-heading"><div><h3>Comprobante de transferencia</h3><p>{selected.proof ? `${selected.proof.originalName} · enviado ${dateTime(selected.proof.createdAt)}` : "El cliente todavía no ha enviado un comprobante."}</p></div>{selected.proof && <i className={`proof-status proof-${selected.proof.status}`}>{selected.proof.status === "under_review" ? "Por revisar" : selected.proof.status === "approved" ? "Aprobado" : "Rechazado"}</i>}</div>
           {selected.proof && <div className="payment-proof-viewer">
@@ -108,7 +133,7 @@ export default function AdminOrdersPage() {
           {detailError && <p className="form-error" role="alert">{detailError}</p>}
         </section>
         {nextStatus(selected) && <section className="order-detail-section order-progress-section"><h3>Siguiente paso</h3><p>Actualiza el estado operativo. El cliente recibirá un correo cuando corresponda.</p><button className="approve-payment" type="button" disabled={updatingStatus} onClick={() => void advanceOrder()}>{updatingStatus ? "Actualizando…" : nextStatus(selected)?.label}</button></section>}
-        {selected.history.length > 0 && <section className="order-detail-section"><h3>Historial</h3><div className="order-history">{selected.history.map((entry) => <div key={entry.id}><span /><p><strong>{statusLabels[entry.toStatus] ?? entry.toStatus}</strong><small>{entry.publicNote || "Estado actualizado"} · {dateTime(entry.createdAt)}{entry.actorName ? ` · ${entry.actorName}` : ""}</small></p></div>)}</div></section>}
+        {selected.history.length > 0 && <section className="order-detail-section order-history-section"><div className="order-history-heading"><div><span className="section-kicker">Trazabilidad</span><h3>Historial del pedido</h3><p>Cada actualización queda registrada para el equipo.</p></div><span>{selected.history.length} {selected.history.length === 1 ? "evento" : "eventos"}</span></div><div className="order-history">{selected.history.map((entry, index) => <article className={`history-entry history-${entry.toStatus}`} key={entry.id}><div className="history-rail"><i>{index === 0 ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}</i></div><div className="history-content"><div><strong>{statusLabels[entry.toStatus] ?? entry.toStatus}</strong><time><Clock3 size={13} /> {dateTime(entry.createdAt)}</time></div><p>{entry.publicNote || "Estado actualizado"}</p>{entry.actorName && <small>Actualizado por {entry.actorName}</small>}</div></article>)}</div></section>}
       </div>
     </section></div>}
   </main>;
