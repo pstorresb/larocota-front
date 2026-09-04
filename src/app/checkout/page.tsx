@@ -11,6 +11,7 @@ import { api, ApiError, type AuthUser, type CatalogCycle } from "@/lib/api/clien
 
 const money = new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" });
 type Contact = Pick<AuthUser, "email" | "firstName" | "lastName"> & { phone: string };
+const ecuadorPhone = /^0\d{9}$/;
 
 function extractCoordinates(value: string) {
   let decoded = value.trim();
@@ -98,7 +99,7 @@ export default function CheckoutPage() {
     const issue = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedContact.email) ? { field: "email", message: "Ingresa un correo electrónico válido." }
       : normalizedContact.firstName.length < 2 ? { field: "firstName", message: "Ingresa tu nombre." }
       : normalizedContact.lastName.length < 2 ? { field: "lastName", message: "Ingresa tu apellido." }
-      : normalizedContact.phone.replace(/\D/g, "").length < 7 ? { field: "phone", message: "Ingresa un teléfono válido para coordinar la entrega." }
+      : !ecuadorPhone.test(normalizedContact.phone) ? { field: "phone", message: "Ingresa un teléfono ecuatoriano de 10 dígitos, en formato 0XXXXXXXXX." }
       : addressLine.length < 8 ? { field: "addressLine", message: "Completa la dirección de entrega con al menos 8 caracteres." }
       : !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedDeliveryTime) ? { field: "requestedDeliveryTime", message: "Selecciona la hora aproximada en que deseas recibir el pedido." }
       : !proofFile ? { field: "proof", message: "Sube el comprobante de la transferencia." }
@@ -149,7 +150,7 @@ export default function CheckoutPage() {
               <label className="field field-full"><span className="field-label">Correo electrónico <span className="required-mark" aria-hidden="true">*</span></span><input required type="email" name="email" placeholder="tu@correo.com" autoComplete="email" value={contact.email} onChange={(event) => updateContact("email", event.target.value)} /></label>
               <label className="field"><span className="field-label">Nombre <span className="required-mark" aria-hidden="true">*</span></span><input required minLength={2} name="firstName" placeholder="Tu nombre" autoComplete="given-name" value={contact.firstName} onChange={(event) => updateContact("firstName", event.target.value)} /></label>
               <label className="field"><span className="field-label">Apellido <span className="required-mark" aria-hidden="true">*</span></span><input required minLength={2} name="lastName" placeholder="Tu apellido" autoComplete="family-name" value={contact.lastName} onChange={(event) => updateContact("lastName", event.target.value)} /></label>
-              <label className="field field-full"><span className="field-label">Teléfono <span className="required-mark" aria-hidden="true">*</span></span><input required name="phone" placeholder="099 000 0000" autoComplete="tel" value={contact.phone} onChange={(event) => updateContact("phone", event.target.value)} /><small>Verifica que podamos llamarte o escribirte por WhatsApp.</small></label>
+              <label className="field field-full"><span className="field-label">Teléfono <span className="required-mark" aria-hidden="true">*</span></span><input required name="phone" inputMode="numeric" pattern="0[0-9]{9}" maxLength={10} title="Ingresa 10 dígitos en formato 0XXXXXXXXX" placeholder="0990000000" autoComplete="tel" value={contact.phone} onChange={(event) => updateContact("phone", event.target.value.replace(/\D/g, "").slice(0, 10))} /><small>Ingresa 10 dígitos: 0XXXXXXXXX. Así podremos llamarte o escribirte por WhatsApp.</small></label>
             </div>
           </section>
 

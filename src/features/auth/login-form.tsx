@@ -7,6 +7,7 @@ import { api, ApiError, googleAuthUrl } from "@/lib/api/client";
 const googleErrors: Record<string, string> = {
   admin_link_blocked: "Por seguridad, las cuentas administrativas deben ingresar con contraseña.", account_disabled: "Esta cuenta se encuentra desactivada.", cancelled_or_invalid: "El acceso con Google fue cancelado o expiró. Inténtalo nuevamente.", authentication_failed: "No pudimos validar tu cuenta de Google.", token_exchange_failed: "Google no pudo completar el acceso. Inténtalo nuevamente.",
 };
+const ecuadorPhone = /^0\d{9}$/;
 function destination(role: string, nextPath: string) { return role === "admin" || role === "superadmin" ? "/admin" : nextPath; }
 
 export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: string; googleError?: string }) {
@@ -25,8 +26,10 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
   }
   async function requestCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget); const signupEmail = String(data.get("email")).trim().toLowerCase();
+    const phone = String(data.get("phone") || "").trim();
+    if (phone && !ecuadorPhone.test(phone)) { setError("Ingresa un teléfono ecuatoriano de 10 dígitos, en formato 0XXXXXXXXX."); setLoading(false); return; }
     try {
-      await api.requestSignupCode({ firstName: String(data.get("firstName")), lastName: String(data.get("lastName")), email: signupEmail, phone: String(data.get("phone") || "") || undefined, password: String(data.get("password")) });
+      await api.requestSignupCode({ firstName: String(data.get("firstName")), lastName: String(data.get("lastName")), email: signupEmail, phone: phone || undefined, password: String(data.get("password")) });
       setEmail(signupEmail); setMode("verify");
     } catch (reason) { setError(message(reason)); } finally { setLoading(false); }
   }
@@ -81,7 +84,7 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
     </form> : <form className="auth-form" onSubmit={requestCode}>
       <div className="auth-verification-copy"><strong>Crea tu cuenta</strong><span>Te enviaremos un PIN a tu correo para confirmar que es tuyo.</span></div>
       <div className="auth-two-fields"><label className="field">Nombre<input name="firstName" required minLength={2} autoComplete="given-name" /></label><label className="field">Apellido<input name="lastName" required minLength={2} autoComplete="family-name" /></label></div>
-      <label className="field">Correo electrónico<input type="email" name="email" required autoComplete="email" placeholder="tu@correo.com" /></label><label className="field">Teléfono <small>Opcional</small><input name="phone" inputMode="tel" autoComplete="tel" placeholder="099 000 0000" /></label><label className="field">Crea una contraseña<input type="password" name="password" required minLength={10} autoComplete="new-password" placeholder="Mínimo 10 caracteres" /></label>
+      <label className="field">Correo electrónico<input type="email" name="email" required autoComplete="email" placeholder="tu@correo.com" /></label><label className="field">Teléfono <small>Opcional · 0XXXXXXXXX</small><input name="phone" inputMode="numeric" autoComplete="tel" pattern="0[0-9]{9}" maxLength={10} title="Ingresa 10 dígitos en formato 0XXXXXXXXX" placeholder="0990000000" onChange={(event) => { event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 10); }} /></label><label className="field">Crea una contraseña<input type="password" name="password" required minLength={10} autoComplete="new-password" placeholder="Mínimo 10 caracteres" /></label>
       {error && <p className="form-error" role="alert">{error}</p>}<button className="place-order" type="submit" disabled={loading}>{loading ? "Enviando PIN…" : "Enviar PIN de confirmación"}</button><button className="auth-text-button" type="button" onClick={() => { setError(""); setMode("login"); }}>Ya tengo una cuenta</button>
     </form>}
   </>;
