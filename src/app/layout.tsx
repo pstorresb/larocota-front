@@ -1,6 +1,25 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
+
+const dmSans = localFont({
+  src: "./fonts/DM_Sans/DMSans-VariableFont_opsz,wght.ttf",
+  variable: "--font-dm-sans",
+  display: "swap",
+});
+
+const lonedruida = localFont({
+  src: "./fonts/Lonedruida-Regular.ttf",
+  variable: "--font-lonedruida",
+  display: "swap",
+});
+
+const allison = localFont({
+  src: "./fonts/Allison/Allison-Regular.ttf",
+  variable: "--font-allison",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
@@ -25,7 +44,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es" data-scroll-behavior="smooth" data-theme="light" suppressHydrationWarning>
-      <body>
+      <body className={`${dmSans.variable} ${lonedruida.variable} ${allison.variable}`}>
         <Script id="theme-init" strategy="beforeInteractive">{`try{var t=localStorage.getItem('larocota-theme');document.documentElement.dataset.theme=t==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}`}</Script>
         {children}
       </body>
