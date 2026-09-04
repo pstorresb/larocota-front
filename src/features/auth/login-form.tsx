@@ -7,7 +7,7 @@ import { api, ApiError, googleAuthUrl } from "@/lib/api/client";
 const googleErrors: Record<string, string> = {
   admin_link_blocked: "Por seguridad, las cuentas administrativas deben ingresar con contraseña.", account_disabled: "Esta cuenta se encuentra desactivada.", cancelled_or_invalid: "El acceso con Google fue cancelado o expiró. Inténtalo nuevamente.", authentication_failed: "No pudimos validar tu cuenta de Google.", token_exchange_failed: "Google no pudo completar el acceso. Inténtalo nuevamente.",
 };
-function destination(role: string) { return role === "admin" || role === "superadmin" ? "/admin" : "/account"; }
+function destination(role: string, nextPath: string) { return role === "admin" || role === "superadmin" ? "/admin" : nextPath; }
 
 export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: string; googleError?: string }) {
   const router = useRouter();
@@ -20,7 +20,7 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget);
-    try { const { user } = await api.login({ email: String(data.get("email")), password: String(data.get("password")) }); router.replace(destination(user.role)); }
+    try { const { user } = await api.login({ email: String(data.get("email")), password: String(data.get("password")) }); router.replace(destination(user.role, nextPath)); }
     catch (reason) { setError(message(reason)); } finally { setLoading(false); }
   }
   async function requestCode(event: FormEvent<HTMLFormElement>) {
@@ -32,7 +32,7 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
   }
   async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget);
-    try { const { user } = await api.verifySignupCode({ email, code: String(data.get("code")).trim() }); router.replace(destination(user.role)); }
+    try { const { user } = await api.verifySignupCode({ email, code: String(data.get("code")).trim() }); router.replace(destination(user.role, nextPath)); }
     catch (reason) { setError(message(reason)); } finally { setLoading(false); }
   }
   async function requestReset(event: FormEvent<HTMLFormElement>) {
@@ -42,7 +42,7 @@ export function LoginForm({ nextPath = "/account", googleError }: { nextPath?: s
   }
   async function verifyReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setLoading(true); setError(""); const data = new FormData(event.currentTarget);
-    try { const { user } = await api.verifyPasswordReset({ email: resetEmail, code: String(data.get("code")).trim(), password: String(data.get("password")) }); router.replace(destination(user.role)); }
+    try { const { user } = await api.verifyPasswordReset({ email: resetEmail, code: String(data.get("code")).trim(), password: String(data.get("password")) }); router.replace(destination(user.role, nextPath)); }
     catch (reason) { setError(message(reason)); } finally { setLoading(false); }
   }
 

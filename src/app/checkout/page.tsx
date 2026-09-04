@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Clock3, ExternalLink, FileUp, LocateFixed, LockKeyhole, MapPin, Navigation, Truck } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
@@ -36,6 +37,7 @@ export default function CheckoutPage() {
   const [cycle, setCycle] = useState<CatalogCycle | null>(null);
   const [contact, setContact] = useState<Contact>({ email: "", firstName: "", lastName: "", phone: "" });
   const [accountLoaded, setAccountLoaded] = useState(false);
+  const [sessionResolved, setSessionResolved] = useState(false);
   const [locationText, setLocationText] = useState("");
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
@@ -59,6 +61,7 @@ export default function CheckoutPage() {
         setContact({ email: user.email, firstName: user.firstName, lastName: user.lastName, phone: user.phone ?? "" });
         setAccountLoaded(true);
       }
+      setSessionResolved(true);
     });
     return () => { active = false; };
   }, []);
@@ -85,6 +88,7 @@ export default function CheckoutPage() {
 
   async function submitOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!accountLoaded) { router.push("/login?next=/checkout"); return; }
     const form = event.currentTarget;
     const data = new FormData(form);
     const proofFile = selectedFile;
@@ -136,7 +140,7 @@ export default function CheckoutPage() {
     <SiteHeader backHref="/#menu" />
     <div className="checkout-shell">
       <section className="checkout-main">
-        <div className="checkout-title"><p className="section-kicker">Último paso</p><h1>¿Dónde entregamos tu pedido?</h1><p>Confirma tus datos, indícanos cómo llegar y sube el comprobante de transferencia.</p><small className="required-fields-note"><span>*</span> Campos obligatorios</small></div>
+        {!sessionResolved ? <div className="checkout-session-loading">Comprobando tu cuenta…</div> : !accountLoaded ? <section className="checkout-account-gate"><p className="section-kicker">Antes de continuar</p><h1>Guarda tu pedido con una cuenta</h1><p>Crear o iniciar sesión es necesario para proteger tu dirección, comprobante y seguimiento del pedido. Tu carrito ya está guardado y te esperará al volver.</p><Link className="primary-button" href="/login?next=/checkout">Crear cuenta o iniciar sesión</Link><Link className="checkout-gate-back" href="/#menu">Seguir viendo el menú</Link></section> : <><div className="checkout-title"><p className="section-kicker">Último paso</p><h1>¿Dónde entregamos tu pedido?</h1><p>Confirma tus datos, indícanos cómo llegar y sube el comprobante de transferencia.</p><small className="required-fields-note"><span>*</span> Campos obligatorios</small></div>
         <form id="checkout-form" noValidate onSubmit={submitOrder}>
           <section className="checkout-card">
             <div className="checkout-card-heading"><span>1</span><div><h2>Datos de contacto</h2><p>Los usaremos para confirmar el pago y coordinar la entrega.</p></div></div>
@@ -172,7 +176,7 @@ export default function CheckoutPage() {
             <div className="bank-card"><div className="bank-isotype" aria-hidden="true"><Image src="/brand/banco-pichincha.png" alt="" width={640} height={324} /></div><div><strong>Banco Pichincha</strong><span>Cuenta de ahorros</span><b className="bank-account-number">Número de cuenta pendiente de configurar</b></div></div>
             <label className={`upload-zone ${fileName ? "has-file" : ""}`}><input required name="proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => { const file = event.target.files?.[0] ?? null; setSelectedFile(file); setFileName(file?.name ?? ""); }} />{fileName ? <><CheckCircle2 size={27} /><strong>Comprobante listo <span className="required-mark" aria-hidden="true">*</span></strong><span>{fileName}</span></> : <><FileUp size={27} /><strong>Sube tu comprobante <span className="required-mark" aria-hidden="true">*</span></strong><span>JPG, PNG, WebP o PDF · máximo 8 MB</span></>}</label>
           </section>
-        </form>
+        </form></>}
       </section>
 
       <aside className="order-summary">
@@ -181,7 +185,7 @@ export default function CheckoutPage() {
         <div className="summary-items">{items.length === 0 ? <p className="summary-empty">Aún no hay productos. Vuelve al menú para elegir.</p> : items.map((item) => <div className="summary-item" key={item.id}><Image src={item.image} alt="" width={62} height={54} unoptimized /><div><strong>{item.quantity} × {item.name}</strong><span>{item.modifiers.length ? item.modifiers.map((modifier) => `${modifier.quantity}× ${modifier.optionName}`).join(" · ") : "Sin modificaciones"}</span></div><b>{money.format(item.unitPrice * item.quantity)}</b></div>)}</div>
         <div className="summary-totals"><div><span>Subtotal</span><span>{money.format(subtotal)}</span></div><div><span>IVA (15%)</span><span>{money.format(tax)}</span></div><div className="delivery-total"><span>Entrega</span><strong>Gratis</strong></div><div className="summary-total"><strong>Total</strong><strong>{money.format(total)}</strong></div></div>
         {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
-        <button className="place-order" type="submit" form="checkout-form" disabled={!items.length || !cycleId || !activeQuote || submitting}>{submitting ? "Creando pedido…" : `Enviar pedido · ${money.format(total)}`}</button>
+        {sessionResolved && !accountLoaded ? <Link className="place-order checkout-login-button" href="/login?next=/checkout">Crear cuenta para continuar</Link> : <button className="place-order" type="submit" form="checkout-form" disabled={!accountLoaded || !items.length || !cycleId || !activeQuote || submitting}>{submitting ? "Creando pedido…" : `Enviar pedido · ${money.format(total)}`}</button>}
         <p className="secure-note"><LockKeyhole size={14} /> Tu comprobante y dirección se guardan de forma privada.</p>
       </aside>
     </div>

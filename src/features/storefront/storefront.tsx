@@ -127,7 +127,7 @@ export function Storefront() {
           <Image className="brand-logo" src="/brand/la-rocota-logo-final.png" alt="La Rocota" width={668} height={340} />
         </a>
         <div className="top-actions">
-          <Link className="ghost-button" href="/account"><UserRound size={18} /> Mi cuenta</Link>
+          <Link className="ghost-button account-button" href="/account" aria-label="Mi cuenta"><UserRound size={18} /><span>Mi cuenta</span></Link>
           <ThemeToggle />
           <button className="cart-button" type="button" aria-label={`Mi pedido, ${cartCount} productos`} onClick={() => setCartOpen(true)}><ShoppingBag size={21} /><span className="count-dot">{cartCount}</span></button>
         </div>
