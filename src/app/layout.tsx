@@ -9,9 +9,12 @@ const dmSans = localFont({
   display: "swap",
 });
 
-const lonedruida = localFont({
-  src: "./fonts/Lonedruida-Regular.ttf",
-  variable: "--font-lonedruida",
+const poppins = localFont({
+  src: [
+    { path: "./fonts/Poppins/Poppins-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "./fonts/Poppins/Poppins-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-poppins",
   display: "swap",
 });
 
@@ -44,7 +47,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es" data-scroll-behavior="smooth" data-theme="light" suppressHydrationWarning>
-      <body className={`${dmSans.variable} ${lonedruida.variable} ${allison.variable}`}>
+      <body className={`${dmSans.variable} ${poppins.variable} ${allison.variable}`}>
         <Script id="theme-init" strategy="beforeInteractive">{`try{var t=localStorage.getItem('larocota-theme');document.documentElement.dataset.theme=t==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}`}</Script>
         {children}
       </body>
