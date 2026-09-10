@@ -1,54 +1,115 @@
 "use client";
 
-import { ChevronDown, ChevronUp, CircleDollarSign, Info, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardPaste, Copy, ListChecks, Lock, Plus, Settings2, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FocusEvent } from "react";
 import { useState } from "react";
 import type { ModifierGroup } from "@/lib/api/client";
 
-export type ModifierOptionDraft = { key: string; id?: string; name: string; description: string; priceDelta: number; includedQuantity: number; defaultQuantity: number; maxQuantity: number; isLocked: boolean; isActive: boolean };
-export type ModifierGroupDraft = { key: string; id?: string; name: string; description: string; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; options: ModifierOptionDraft[] };
+// The admin edits intent (what kind of group / option is this?) and the payload
+// for the API — includedQuantity / defaultQuantity / isLocked / min / max — is
+// derived in `draftToPayload`. The database model does not change.
+export type GroupKind = "ingredients" | "choice" | "extras";
+export type OptionKind = "fixed" | "included" | "extra";
+
+export type ModifierOptionDraft = {
+  key: string; id?: string; name: string; description: string; priceDelta: number;
+  kind: OptionKind; isDefault: boolean; extraPortions: boolean; maxQuantity: number; isActive: boolean;
+};
+export type ModifierGroupDraft = {
+  key: string; id?: string; name: string; description: string; kind: GroupKind;
+  required: boolean; limit: number | null; minSelections: number; isActive: boolean; options: ModifierOptionDraft[];
+};
+
+export type ModifierGroupPayload = {
+  id?: string; name: string; description?: string; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; sortOrder: number;
+  options: Array<{ id?: string; name: string; description?: string; priceDelta: number; includedQuantity: number; defaultQuantity: number; maxQuantity: number; isLocked: boolean; isActive: boolean; sortOrder: number }>;
+};
 
 const key = () => crypto.randomUUID();
 const money = new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" });
 const selectNumber = (event: FocusEvent<HTMLInputElement>) => event.currentTarget.select();
 
-function NumberInput({ value, onValueChange, min = 0, max, decimal = false, ariaLabel }: { value: number; onValueChange: (value: number) => void; min?: number; max?: number; decimal?: boolean; ariaLabel?: string }) {
-  const [draft, setDraft] = useState(String(value));
-  function parse(raw: string) {
-    const number = Number(raw.replace(",", "."));
-    return Number.isFinite(number) ? number : null;
-  }
+const groupKinds: Record<GroupKind, { label: string; hint: string; icon: typeof ListChecks; optionKind: OptionKind }> = {
+  ingredients: { label: "Ingredientes del plato", hint: "Vienen incluidos; el cliente puede quitar los que no quiera.", icon: ListChecks, optionKind: "included" },
+  choice: { label: "Elige una", hint: "El cliente escoge una sola opción (base, pan, tamaño…).", icon: SlidersHorizontal, optionKind: "extra" },
+  extras: { label: "Extras", hint: "Adicionales con costo que el cliente suma si quiere.", icon: Plus, optionKind: "extra" },
+};
+const optionKinds: Record<OptionKind, string> = { fixed: "Fijo", included: "Incluido", extra: "Extra" };
+
+function NumberInput({ value, onValueChange, min = 0, max, decimal = false, ariaLabel, placeholder }: { value: number | null; onValueChange: (value: number | null) => void; min?: number; max?: number; decimal?: boolean; ariaLabel?: string; placeholder?: string }) {
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  const parse = (raw: string) => { const number = Number(raw.replace(",", ".")); return raw.trim() !== "" && Number.isFinite(number) ? number : null; };
   function commit() {
     const parsed = parse(draft);
-    const next = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, parsed ?? value));
+    if (parsed === null) { setDraft(value === null ? "" : String(value)); onValueChange(value); return; }
+    const next = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, parsed));
     const normalized = decimal ? Math.round(next * 100) / 100 : Math.round(next);
     setDraft(String(normalized)); onValueChange(normalized);
   }
-  return <input aria-label={ariaLabel} type="text" inputMode={decimal ? "decimal" : "numeric"} value={draft} onFocus={selectNumber} onChange={(event) => { const raw = event.target.value; if (!/^\d*(?:[.,]\d{0,2})?$/.test(raw)) return; setDraft(raw); const parsed = parse(raw); if (parsed !== null) onValueChange(parsed); }} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />;
+  return <input aria-label={ariaLabel} placeholder={placeholder} type="text" inputMode={decimal ? "decimal" : "numeric"} value={draft} onFocus={selectNumber}
+    onChange={(event) => { const raw = event.target.value; if (!/^\d*(?:[.,]\d{0,2})?$/.test(raw)) return; setDraft(raw); const parsed = parse(raw); if (parsed !== null) onValueChange(parsed); }}
+    onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} />;
 }
 
-export function modifierGroupsToDraft(groups: ModifierGroup[]): ModifierGroupDraft[] {
-  return groups.map((group) => ({ key: group.id, id: group.id, name: group.name, description: group.description ?? "", selectionType: group.selectionType, minSelections: group.minSelections, maxSelections: group.maxSelections, isActive: group.isActive, options: group.options.map((option) => ({ key: option.id, id: option.id, name: option.name, description: option.description ?? "", priceDelta: Number(option.priceDelta), includedQuantity: option.includedQuantity, defaultQuantity: option.defaultQuantity, maxQuantity: option.maxQuantity, isLocked: option.isLocked, isActive: option.isActive })) }));
+// ---- API <-> draft -----------------------------------------------------------
+
+function inferGroupKind(group: ModifierGroup): GroupKind {
+  if (group.selectionType === "single") return "choice";
+  const active = group.options.filter((option) => option.isActive);
+  const allIncluded = active.length > 0 && active.every((option) => option.includedQuantity > 0);
+  return allIncluded && group.maxSelections >= active.length ? "ingredients" : "extras";
 }
+
+export function modifierGroupsToDraft(groups: ModifierGroup[], { stripIds = false } = {}): ModifierGroupDraft[] {
+  return groups.map((group) => {
+    const kind = inferGroupKind(group);
+    const active = group.options.filter((option) => option.isActive);
+    return {
+      key: group.id, id: stripIds ? undefined : group.id, name: group.name, description: group.description ?? "", kind,
+      required: group.minSelections > 0, limit: kind === "extras" && group.maxSelections < active.length ? group.maxSelections : null,
+      minSelections: kind === "choice" ? 0 : group.minSelections, isActive: group.isActive,
+      options: group.options.map((option) => ({
+        key: option.id, id: stripIds ? undefined : option.id, name: option.name, description: option.description ?? "", priceDelta: Number(option.priceDelta),
+        kind: option.isLocked ? "fixed" : option.includedQuantity > 0 ? "included" : "extra",
+        isDefault: option.defaultQuantity > 0, extraPortions: option.maxQuantity > 1, maxQuantity: Math.max(1, option.maxQuantity), isActive: option.isActive,
+      })),
+    };
+  });
+}
+
+export function draftToPayload(groups: ModifierGroupDraft[]): ModifierGroupPayload[] {
+  return groups.map((group, groupIndex) => {
+    const activeCount = Math.max(1, group.options.filter((option) => option.isActive).length);
+    const single = group.kind === "choice";
+    const maxSelections = single ? 1 : Math.min(50, group.limit ?? activeCount, activeCount);
+    const minSelections = single ? (group.required ? 1 : 0) : Math.min(group.minSelections, maxSelections);
+    return {
+      id: group.id, name: group.name.trim(), description: group.description.trim() || undefined, selectionType: single ? "single" : "multiple",
+      minSelections, maxSelections, isActive: group.isActive, sortOrder: groupIndex,
+      options: group.options.map((option, optionIndex) => {
+        const included = !single && option.kind !== "extra" ? 1 : 0;
+        const defaultQuantity = single ? (option.isDefault ? 1 : 0) : included;
+        return {
+          id: option.id, name: option.name.trim(), description: option.description.trim() || undefined, priceDelta: option.priceDelta,
+          includedQuantity: included, defaultQuantity, maxQuantity: single ? 1 : option.extraPortions ? Math.max(2, option.maxQuantity) : 1,
+          isLocked: !single && option.kind === "fixed", isActive: option.isActive, sortOrder: optionIndex,
+        };
+      }),
+    };
+  });
+}
+
+// ---- validation -----------------------------------------------------------------
 
 export function groupConfigurationIssues(group: ModifierGroupDraft) {
   const issues: string[] = [];
   const active = group.options.filter((option) => option.isActive);
-  const defaults = active.filter((option) => option.defaultQuantity > 0).length;
   if (!group.name.trim()) issues.push("Escribe un nombre para el grupo.");
-  if (group.isActive && active.length === 0) issues.push("Agrega al menos una opción activa.");
-  if (group.minSelections > group.maxSelections) issues.push("El mínimo requerido no puede superar el máximo.");
-  if (group.isActive && group.maxSelections > active.length) issues.push(`El máximo es ${group.maxSelections}, pero solo hay ${active.length} ${active.length === 1 ? "opción activa" : "opciones activas"}.`);
-  if (group.isActive && (defaults < group.minSelections || defaults > group.maxSelections)) issues.push(`Hay ${defaults} opciones preseleccionadas; deben quedar entre ${group.minSelections} y ${group.maxSelections}.`);
-  if (group.selectionType === "single" && (group.maxSelections !== 1 || group.minSelections > 1 || active.some((option) => option.maxQuantity !== 1))) issues.push("La selección única debe permitir exactamente una opción y una unidad.");
-  group.options.forEach((option, index) => {
-    const label = option.name.trim() || `Opción ${index + 1}`;
-    if (!option.name.trim()) issues.push(`Completa el nombre de la opción ${index + 1}.`);
-    if (option.priceDelta < 0) issues.push(`${label}: el precio adicional no puede ser negativo.`);
-    if (option.maxQuantity < 1) issues.push(`${label}: la cantidad máxima debe ser al menos 1.`);
-    if (option.includedQuantity > option.maxQuantity || option.defaultQuantity > option.maxQuantity) issues.push(`${label}: la cantidad incluida o inicial supera el máximo.`);
-    if (option.isLocked && (option.defaultQuantity < 1 || option.includedQuantity < option.defaultQuantity)) issues.push(`${label}: una opción fija debe estar incluida y preseleccionada.`);
-  });
+  if (group.isActive && active.length === 0) issues.push("Agrega al menos una opción disponible.");
+  if (group.kind === "choice" && group.required && group.isActive && active.length > 0 && !active.some((option) => option.isDefault)) issues.push("Marca cuál opción viene seleccionada por defecto.");
+  if (group.kind === "choice" && active.filter((option) => option.isDefault).length > 1) issues.push("Solo una opción puede venir seleccionada por defecto.");
+  if (group.kind !== "choice" && group.limit !== null && group.limit > active.length) issues.push(`El límite es ${group.limit}, pero solo hay ${active.length} opciones disponibles.`);
+  group.options.forEach((option, index) => { if (!option.name.trim()) issues.push(`Completa el nombre de la opción ${index + 1}.`); });
   return issues;
 }
 
@@ -60,64 +121,158 @@ export function validateModifierGroups(groups: ModifierGroupDraft[]) {
   return null;
 }
 
-export function ProductConfiguratorEditor({ groups, onChange }: { groups: ModifierGroupDraft[]; onChange: (groups: ModifierGroupDraft[]) => void }) {
+// ---- helpers --------------------------------------------------------------------
+
+function newOption(kind: OptionKind, name = ""): ModifierOptionDraft {
+  return { key: key(), name, description: "", priceDelta: 0, kind, isDefault: false, extraPortions: false, maxQuantity: 2, isActive: true };
+}
+
+function newGroup(kind: GroupKind): ModifierGroupDraft {
+  const names: Record<GroupKind, string> = { ingredients: "Ingredientes", choice: "", extras: "Extras" };
+  return { key: key(), name: names[kind], description: "", kind, required: kind === "choice", limit: null, minSelections: 0, isActive: true, options: [] };
+}
+
+function splitList(raw: string) {
+  return raw.split(/[\n,;]+/).map((part) => part.trim()).filter(Boolean);
+}
+
+function optionSummary(group: ModifierGroupDraft, option: ModifierOptionDraft) {
+  if (group.kind === "choice") return option.priceDelta > 0 ? `+${money.format(option.priceDelta)}` : "Sin recargo";
+  if (option.kind === "extra") return option.priceDelta > 0 ? `+${money.format(option.priceDelta)}${option.extraPortions ? ` · hasta ${option.maxQuantity}` : ""}` : "Sin recargo";
+  if (option.extraPortions) return `1 incluida · ${option.priceDelta > 0 ? `+${money.format(option.priceDelta)} por porción extra` : "porción extra gratis"} · máx ${option.maxQuantity}`;
+  return option.kind === "fixed" ? "Incluido · no se puede quitar" : "Incluido";
+}
+
+function groupSummary(group: ModifierGroupDraft) {
+  const active = group.options.filter((option) => option.isActive);
+  if (group.kind === "choice") return `${active.length} ${active.length === 1 ? "opción" : "opciones"} · ${group.required ? "obligatorio" : "opcional"}`;
+  const fixed = active.filter((option) => option.kind === "fixed").length;
+  const extras = active.filter((option) => option.kind === "extra").length;
+  const parts = [`${active.length} ${active.length === 1 ? "opción" : "opciones"}`];
+  if (fixed) parts.push(`${fixed} ${fixed === 1 ? "fija" : "fijas"}`);
+  if (extras) parts.push(`${extras} con costo`);
+  if (group.limit !== null) parts.push(`máx ${group.limit}`);
+  return parts.join(" · ");
+}
+
+// ---- component -----------------------------------------------------------------
+
+type CopySource = { products: Array<{ id: string; name: string }>; load: (productId: string) => Promise<ModifierGroup[]> };
+
+export function ProductConfiguratorEditor({ groups, onChange, copySource }: { groups: ModifierGroupDraft[]; onChange: (groups: ModifierGroupDraft[]) => void; copySource?: CopySource }) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
+  const [pasting, setPasting] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState("");
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState("");
+
   const patchGroup = (index: number, patch: Partial<ModifierGroupDraft>) => onChange(groups.map((group, itemIndex) => itemIndex === index ? { ...group, ...patch } : group));
   const patchOption = (groupIndex: number, optionIndex: number, patch: Partial<ModifierOptionDraft>) => patchGroup(groupIndex, { options: groups[groupIndex].options.map((option, itemIndex) => itemIndex === optionIndex ? { ...option, ...patch } : option) });
+  const toggle = (set: Set<string>, value: string) => { const next = new Set(set); if (next.has(value)) next.delete(value); else next.add(value); return next; };
 
   function moveGroup(index: number, direction: -1 | 1) {
     const next = [...groups]; const target = index + direction;
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]]; onChange(next);
   }
-  function addGroup() { onChange([...groups, { key: key(), name: "", description: "", selectionType: "multiple", minSelections: 0, maxSelections: 1, isActive: true, options: [] }]); }
-  function addOption(groupIndex: number) { patchGroup(groupIndex, { options: [...groups[groupIndex].options, { key: key(), name: "", description: "", priceDelta: 0, includedQuantity: 0, defaultQuantity: 0, maxQuantity: 1, isLocked: false, isActive: true }] }); }
-  function setSelectionType(groupIndex: number, selectionType: "single" | "multiple") {
+  function addGroup(kind: GroupKind) { const group = newGroup(kind); onChange([...groups, group]); setCollapsed((current) => { const next = new Set(current); next.delete(group.key); return next; }); }
+  function addOption(groupIndex: number, name = "") { const group = groups[groupIndex]; patchGroup(groupIndex, { options: [...group.options, newOption(groupKinds[group.kind].optionKind, name)] }); }
+  function addPasted(groupIndex: number) {
+    const names = splitList(pasteText);
+    if (names.length) { const group = groups[groupIndex]; patchGroup(groupIndex, { options: [...group.options, ...names.map((name) => newOption(groupKinds[group.kind].optionKind, name))] }); }
+    setPasteText(""); setPasting(null);
+  }
+  function setDefault(groupIndex: number, optionIndex: number) {
+    patchGroup(groupIndex, { options: groups[groupIndex].options.map((option, itemIndex) => ({ ...option, isDefault: itemIndex === optionIndex })) });
+  }
+  function changeGroupKind(groupIndex: number, kind: GroupKind) {
     const group = groups[groupIndex];
-    if (selectionType === "multiple") { patchGroup(groupIndex, { selectionType }); return; }
-    let keptDefault = false;
-    patchGroup(groupIndex, { selectionType, minSelections: Math.min(1, group.minSelections), maxSelections: 1, options: group.options.map((option) => { const keepDefault = option.defaultQuantity > 0 && !keptDefault; if (keepDefault) keptDefault = true; return { ...option, defaultQuantity: keepDefault ? 1 : 0, includedQuantity: Math.min(1, option.includedQuantity), maxQuantity: 1 }; }) });
+    const optionKind = groupKinds[kind].optionKind;
+    patchGroup(groupIndex, { kind, required: kind === "choice" ? true : group.required, limit: kind === "extras" ? group.limit : null, options: group.options.map((option) => ({ ...option, kind: kind === "ingredients" && option.kind === "extra" ? "included" : kind === "extras" && option.kind !== "extra" ? optionKind : option.kind })) });
+  }
+  async function copyFrom(productId: string) {
+    if (!copySource || !productId) return;
+    setCopying(true); setCopyError("");
+    try {
+      const copied = modifierGroupsToDraft(await copySource.load(productId), { stripIds: true }).map((group) => ({ ...group, key: key(), options: group.options.map((option) => ({ ...option, key: key() })) }));
+      onChange(groups.length === 0 || window.confirm("¿Reemplazar la personalización actual por la copiada?") ? copied : groups);
+    } catch { setCopyError("No pudimos copiar la personalización de ese producto."); }
+    finally { setCopying(false); }
   }
 
   return <section className="wide modifier-editor">
-    <div className="modifier-editor-heading"><div><strong>Personalización del producto</strong><span>Crea grupos claros de ingredientes, elecciones y extras.</span></div><button type="button" onClick={addGroup}><Plus size={15} /> Nuevo grupo</button></div>
-    <div className="modifier-guide"><Info size={17} /><div><strong>Ejemplo: guacamole incluido + papas por $1,50</strong><span>Usa “Puede combinar varias” y máximo 2. Marca guacamole como incluido y preseleccionado; deja papas sin incluir, sin preseleccionar y con precio adicional de 1,50.</span></div></div>
-    {groups.length === 0 ? <div className="modifier-empty">Este producto todavía no requiere personalización.</div> : groups.map((group, groupIndex) => {
-      const issues = groupConfigurationIssues(group); const activeCount = group.options.filter((option) => option.isActive).length;
+    <div className="modifier-editor-heading">
+      <div><strong>Personalización del producto</strong><span>Ingredientes que vienen incluidos, elecciones y extras con costo.</span></div>
+      {copySource && copySource.products.length > 0 && <label className="modifier-copy"><Copy size={14} /><select value="" disabled={copying} onChange={(event) => void copyFrom(event.target.value)}><option value="">{copying ? "Copiando…" : "Copiar de otro producto…"}</option>{copySource.products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>}
+    </div>
+    {copyError && <p className="form-error" role="alert">{copyError}</p>}
+
+    {groups.length === 0 && <div className="modifier-empty">Este producto todavía no tiene personalización. Agrega un grupo para empezar.</div>}
+
+    {groups.map((group, groupIndex) => {
+      const issues = groupConfigurationIssues(group); const kind = groupKinds[group.kind]; const isCollapsed = collapsed.has(group.key);
       return <article className={`modifier-group-card ${issues.length ? "has-issues" : ""}`} key={group.key}>
-        <header><div><b>{group.name.trim() || `Grupo ${groupIndex + 1}`}</b><span>{group.selectionType === "single" ? "El cliente elige una opción" : "El cliente puede combinar opciones"}</span></div><div className="modifier-card-actions"><button type="button" aria-label="Subir grupo" disabled={groupIndex === 0} onClick={() => moveGroup(groupIndex, -1)}><ChevronUp size={15} /></button><button type="button" aria-label="Bajar grupo" disabled={groupIndex === groups.length - 1} onClick={() => moveGroup(groupIndex, 1)}><ChevronDown size={15} /></button><button type="button" aria-label="Eliminar grupo" onClick={() => onChange(groups.filter((_, index) => index !== groupIndex))}><Trash2 size={15} /></button></div></header>
-        <div className="modifier-group-fields">
-          <label>Nombre del grupo<input required value={group.name} onChange={(event) => patchGroup(groupIndex, { name: event.target.value })} placeholder="Ej. Acompañamientos" /></label>
-          <label>Cómo elige el cliente<select value={group.selectionType} onChange={(event) => setSelectionType(groupIndex, event.target.value as "single" | "multiple")}><option value="multiple">Puede combinar varias</option><option value="single">Elige solo una</option></select></label>
-          <label className="wide">Texto de ayuda <span className="label-optional">Opcional</span><input value={group.description} onChange={(event) => patchGroup(groupIndex, { description: event.target.value })} placeholder="Ej. Elige tus acompañamientos" /></label>
-          <label>Mínimo requerido<NumberInput key={`min-${group.selectionType}`} value={group.minSelections} min={0} max={group.selectionType === "single" ? 1 : 50} onValueChange={(value) => patchGroup(groupIndex, { minSelections: value })} /></label>
-          <label>Máximo que puede elegir<NumberInput key={`max-${group.selectionType}`} value={group.maxSelections} min={1} max={group.selectionType === "single" ? 1 : 50} onValueChange={(value) => patchGroup(groupIndex, { maxSelections: value })} /></label>
-          <label className="check-field"><input type="checkbox" checked={group.isActive} onChange={(event) => patchGroup(groupIndex, { isActive: event.target.checked })} /> Grupo visible y activo</label>
-        </div>
-        {group.selectionType === "single" && group.options.some((option) => option.defaultQuantity > 0) && <div className="modifier-context-note"><Info size={15} /> Al elegir otra opción, la preseleccionada será reemplazada. Si deben conservarse ambas, cambia a “Puede combinar varias”.</div>}
-        <div className="modifier-options">
-          <div className="modifier-options-head"><div><strong>Opciones</strong><span>{activeCount} activas · el cliente puede elegir hasta {group.maxSelections}</span></div><button type="button" onClick={() => addOption(groupIndex)}><Plus size={14} /> Agregar opción</button></div>
-          {group.options.length === 0 ? <p>Agrega al menos una opción para publicar este grupo.</p> : group.options.map((option, optionIndex) => {
-            const included = option.includedQuantity > 0; const selected = option.defaultQuantity > 0;
-            return <div className="modifier-option-card" key={option.key}>
-              <div className="modifier-option-primary">
-                <label className="option-name">Nombre<input required value={option.name} onChange={(event) => patchOption(groupIndex, optionIndex, { name: event.target.value })} placeholder="Ej. Porción de papas fritas" /></label>
-                <label className="option-price">Precio adicional<div className="money-input"><CircleDollarSign size={16} /><NumberInput ariaLabel={`Precio adicional de ${option.name || `opción ${optionIndex + 1}`}`} value={option.priceDelta} min={0} max={10000} decimal onValueChange={(value) => patchOption(groupIndex, optionIndex, { priceDelta: value })} /></div></label>
-                <label className="option-active"><input type="checkbox" checked={option.isActive} onChange={(event) => patchOption(groupIndex, optionIndex, { isActive: event.target.checked })} /> Activa</label>
-                <button className="modifier-delete-option" type="button" aria-label="Eliminar opción" onClick={() => patchGroup(groupIndex, { options: group.options.filter((_, index) => index !== optionIndex) })}><Trash2 size={15} /></button>
-              </div>
-              <label className="option-description">Descripción para el cliente <span className="label-optional">Opcional</span><input value={option.description} onChange={(event) => patchOption(groupIndex, optionIndex, { description: event.target.value })} placeholder="Ej. Se entrega en un recipiente aparte" /></label>
-              <div className="modifier-option-behavior">
-                <label className="behavior-toggle"><input type="checkbox" checked={included} disabled={option.isLocked} onChange={(event) => patchOption(groupIndex, optionIndex, { includedQuantity: event.target.checked ? 1 : 0, defaultQuantity: event.target.checked ? Math.max(1, option.defaultQuantity) : option.defaultQuantity })} /><span><b>Incluida en el precio</b><small>La primera unidad no suma costo</small></span></label>
-                <label className="behavior-toggle"><input type="checkbox" checked={selected} disabled={option.isLocked} onChange={(event) => patchOption(groupIndex, optionIndex, { defaultQuantity: event.target.checked ? 1 : 0 })} /><span><b>Preseleccionada</b><small>Aparece marcada al abrir</small></span></label>
-                <label className="behavior-toggle locked-toggle"><input type="checkbox" checked={option.isLocked} onChange={(event) => patchOption(groupIndex, optionIndex, { isLocked: event.target.checked, includedQuantity: event.target.checked ? Math.max(1, option.includedQuantity) : option.includedQuantity, defaultQuantity: event.target.checked ? Math.max(1, option.defaultQuantity) : option.defaultQuantity })} /><span><b>No permitir quitar</b><small>Ingrediente fijo del producto</small></span></label>
-                <label className="option-maximum">Cantidad máxima<NumberInput key={`quantity-${group.selectionType}`} value={option.maxQuantity} min={1} max={20} onValueChange={(value) => patchOption(groupIndex, optionIndex, { maxQuantity: value })} /></label>
-                <div className="option-result"><span>Así se cobrará</span><strong>{included ? "Incluida" : option.priceDelta > 0 ? `+${money.format(option.priceDelta)}` : "Sin recargo"}</strong></div>
-              </div>
-            </div>;
-          })}
-          {issues.length > 0 && <div className="modifier-inline-errors" role="alert"><strong>Revisa este grupo</strong>{issues.map((issue) => <span key={issue}>{issue}</span>)}</div>}
-        </div>
+        <header>
+          <button className="modifier-group-toggle" type="button" aria-expanded={!isCollapsed} onClick={() => setCollapsed((current) => toggle(current, group.key))}>
+            <kind.icon size={16} />
+            <div><b>{group.name.trim() || `Grupo ${groupIndex + 1}`}</b><span>{kind.label} · {groupSummary(group)}</span></div>
+            {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+          <div className="modifier-card-actions"><button type="button" aria-label="Subir grupo" disabled={groupIndex === 0} onClick={() => moveGroup(groupIndex, -1)}><ChevronUp size={15} /></button><button type="button" aria-label="Bajar grupo" disabled={groupIndex === groups.length - 1} onClick={() => moveGroup(groupIndex, 1)}><ChevronDown size={15} /></button><button type="button" aria-label="Eliminar grupo" onClick={() => onChange(groups.filter((_, index) => index !== groupIndex))}><Trash2 size={15} /></button></div>
+        </header>
+
+        {!isCollapsed && <>
+          <div className="modifier-group-fields">
+            <label>Nombre del grupo<input required value={group.name} onChange={(event) => patchGroup(groupIndex, { name: event.target.value })} placeholder={group.kind === "choice" ? "Ej. Elige tu base" : group.kind === "extras" ? "Ej. Extras" : "Ej. Ingredientes"} /></label>
+            <label>Tipo<select value={group.kind} onChange={(event) => changeGroupKind(groupIndex, event.target.value as GroupKind)}>{(Object.keys(groupKinds) as GroupKind[]).map((value) => <option key={value} value={value}>{groupKinds[value].label}</option>)}</select></label>
+            {group.kind === "choice" && <label className="check-field modifier-check"><input type="checkbox" checked={group.required} onChange={(event) => patchGroup(groupIndex, { required: event.target.checked })} /> Obligatorio</label>}
+            {group.kind === "extras" && <label>Máximo que puede elegir<NumberInput key={`limit-${group.key}`} value={group.limit} min={1} max={50} placeholder="Sin límite" onValueChange={(value) => patchGroup(groupIndex, { limit: value })} /></label>}
+            {group.kind === "ingredients" && <p className="modifier-kind-hint">{kind.hint}</p>}
+            <label className="wide">Texto de ayuda <span className="label-optional">Opcional</span><input value={group.description} onChange={(event) => patchGroup(groupIndex, { description: event.target.value })} placeholder={group.kind === "ingredients" ? "Ej. Quita lo que no quieras" : group.kind === "choice" ? "Ej. Todas las bases vienen frescas" : "Ej. Se sirven aparte"} /></label>
+          </div>
+
+          <div className="modifier-options">
+            {group.options.length > 0 && <div className="modifier-option-head"><span>Opción</span>{group.kind !== "choice" && <span>Tipo</span>}{group.kind === "choice" && <span>Por defecto</span>}<span>Precio</span><span /></div>}
+            {group.options.map((option, optionIndex) => {
+              const expanded = expandedOptions.has(option.key);
+              return <div className={`modifier-option-row ${option.isActive ? "" : "is-inactive"} ${expanded ? "is-expanded" : ""}`} key={option.key}>
+                <div className="modifier-option-main">
+                  <input className="modifier-option-name" required value={option.name} onChange={(event) => patchOption(groupIndex, optionIndex, { name: event.target.value })} placeholder="Nombre de la opción" aria-label={`Nombre de la opción ${optionIndex + 1}`} />
+                  {group.kind !== "choice" && <select value={option.kind} aria-label={`Tipo de ${option.name || `opción ${optionIndex + 1}`}`} onChange={(event) => patchOption(groupIndex, optionIndex, { kind: event.target.value as OptionKind })}>{(Object.keys(optionKinds) as OptionKind[]).map((value) => <option key={value} value={value}>{optionKinds[value]}</option>)}</select>}
+                  {group.kind === "choice" && <label className="modifier-default"><input type="radio" name={`default-${group.key}`} checked={option.isDefault} onChange={() => setDefault(groupIndex, optionIndex)} /><span>{option.isDefault ? "Sí" : "—"}</span></label>}
+                  <div className="modifier-option-price">
+                    {group.kind === "choice" || option.kind === "extra" || option.extraPortions
+                      ? <div className="money-input"><span>$</span><NumberInput key={`price-${option.key}`} ariaLabel={`Precio de ${option.name || `opción ${optionIndex + 1}`}`} value={option.priceDelta} min={0} max={10000} decimal onValueChange={(value) => patchOption(groupIndex, optionIndex, { priceDelta: value ?? 0 })} /></div>
+                      : <span className="modifier-option-summary">{option.kind === "fixed" && <Lock size={12} />}{optionSummary(group, option)}</span>}
+                  </div>
+                  <div className="modifier-option-actions">
+                    <button type="button" className={expanded ? "is-active" : ""} aria-label="Más opciones" aria-expanded={expanded} onClick={() => setExpandedOptions((current) => toggle(current, option.key))}><Settings2 size={15} /></button>
+                    <button type="button" aria-label="Eliminar opción" onClick={() => patchGroup(groupIndex, { options: group.options.filter((_, index) => index !== optionIndex) })}><Trash2 size={15} /></button>
+                  </div>
+                </div>
+                {(option.extraPortions || !option.isActive || option.description) && !expanded && <small className="modifier-option-meta">{[!option.isActive && "Agotado", option.extraPortions && group.kind !== "choice" && optionSummary(group, option), option.description].filter(Boolean).join(" · ")}</small>}
+                {expanded && <div className="modifier-option-details">
+                  <label className="wide">Nota para el cliente <span className="label-optional">Opcional</span><input value={option.description} onChange={(event) => patchOption(groupIndex, optionIndex, { description: event.target.value })} placeholder="Ej. Se entrega en un recipiente aparte" /></label>
+                  <label className="check-field modifier-check"><input type="checkbox" checked={!option.isActive} onChange={(event) => patchOption(groupIndex, optionIndex, { isActive: !event.target.checked })} /> Agotado (ocultar temporalmente)</label>
+                  {group.kind !== "choice" && <label className="check-field modifier-check"><input type="checkbox" checked={option.extraPortions} onChange={(event) => patchOption(groupIndex, optionIndex, { extraPortions: event.target.checked })} /> Permitir porción extra</label>}
+                  {group.kind !== "choice" && option.extraPortions && <label>Hasta cuántas<NumberInput key={`max-${option.key}`} value={option.maxQuantity} min={2} max={20} onValueChange={(value) => patchOption(groupIndex, optionIndex, { maxQuantity: value ?? 2 })} /></label>}
+                  {group.kind !== "choice" && option.kind !== "extra" && option.extraPortions && <p className="modifier-kind-hint">La primera porción va incluida; el precio de arriba se cobra por cada porción adicional.</p>}
+                </div>}
+              </div>;
+            })}
+            {pasting === group.key
+              ? <div className="modifier-paste"><textarea autoFocus rows={3} value={pasteText} onChange={(event) => setPasteText(event.target.value)} placeholder={"Una por línea o separadas por coma:\nPollo a la parrilla, Tomate cherry, Zanahoria"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); addPasted(groupIndex); } if (event.key === "Escape") { setPasting(null); setPasteText(""); } }} /><div><button type="button" onClick={() => addPasted(groupIndex)}>Agregar {splitList(pasteText).length || ""}</button><button type="button" className="secondary" onClick={() => { setPasting(null); setPasteText(""); }}>Cancelar</button></div></div>
+              : <div className="modifier-options-foot"><button type="button" onClick={() => addOption(groupIndex)}><Plus size={14} /> Agregar opción</button><button type="button" onClick={() => { setPasting(group.key); setPasteText(""); }}><ClipboardPaste size={14} /> Pegar lista</button></div>}
+            {issues.length > 0 && <div className="modifier-inline-errors" role="alert">{issues.map((issue) => <span key={issue}>{issue}</span>)}</div>}
+          </div>
+        </>}
       </article>;
     })}
+
+    <div className="modifier-add-group">
+      <span>Agregar grupo</span>
+      {(Object.keys(groupKinds) as GroupKind[]).map((value) => { const Icon = groupKinds[value].icon; return <button type="button" key={value} title={groupKinds[value].hint} onClick={() => addGroup(value)}><Icon size={15} /> {groupKinds[value].label}</button>; })}
+    </div>
   </section>;
 }

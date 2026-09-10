@@ -230,7 +230,7 @@ export function Storefront() {
                   const selectedCount = group.options.filter((option) => (optionQuantities[option.id] ?? 0) > 0).length;
                   return <section className="option-group" key={group.id} role={group.selectionType === "single" ? "radiogroup" : "group"} aria-label={group.name}>
                     <div className="option-heading"><div><h3>{group.name}</h3>{group.description && <p>{group.description}</p>}</div><span className={group.minSelections > 0 ? "required-badge" : "optional-badge"}>{group.minSelections > 0 ? "Requerido" : "Opcional"}</span></div>
-                    <p className="selection-help">{group.selectionType === "single" ? "Selecciona 1" : `Selecciona hasta ${group.maxSelections}`} · {selectedCount} seleccionado{selectedCount === 1 ? "" : "s"}</p>
+                    <p className="selection-help">{group.selectionType === "single" ? `Selecciona 1 · ${selectedCount} seleccionado${selectedCount === 1 ? "" : "s"}` : group.options.filter((option) => option.isActive).every((option) => option.includedQuantity > 0) ? "Vienen incluidos · quita lo que no quieras" : `Selecciona hasta ${group.maxSelections} · ${selectedCount} seleccionado${selectedCount === 1 ? "" : "s"}`}</p>
                     {group.options.map((option) => {
                       const selected = optionQuantities[option.id] ?? 0;
                       const delta = (option.priceDeltaCents ?? Math.round(Number(option.priceDelta) * 100)) / 100;
