@@ -22,6 +22,7 @@ export function Storefront() {
   const [categories, setCategories] = useState<string[]>([]);
   const [cycle, setCycle] = useState<CatalogCycle | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("Todo");
@@ -54,7 +55,7 @@ export function Storefront() {
       setCycleId(catalog.cycle?.id ?? null);
       setCategories(catalog.categories.map((category) => category.name));
       setProducts(catalog.products.map((product) => ({ id: product.id, category: product.category, name: product.name, description: product.description, price: product.basePriceCents / 100, available: product.available, image: product.imageUrl ? productImageUrl(product.imageUrl) : null, imageAlt: product.imageAlt || product.name, badge: product.badge, modifierGroups: product.modifierGroups })));
-    }).finally(() => { if (active) setCatalogLoading(false); });
+    }).catch(() => { if (active) setCatalogError(true); }).finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
   }, [setCycleId]);
 
@@ -146,7 +147,9 @@ export function Storefront() {
           <Image src="/brand/hero-food.png" alt="Selección de ensalada, sánduche, quesadillas y jugo fresco" fill preload sizes="(max-width: 950px) 100vw, 55vw" />
           <div className="cycle-card">
             <div className="cycle-label"><CalendarClock size={16} /> {cycle ? cycle.name : "Próximo ciclo"}</div>
-            {cycle ? <><strong>{cycle.publicMessage || "Pedidos disponibles para este ciclo."}</strong><p>Entrega: {new Intl.DateTimeFormat("es-EC", { dateStyle: "long", timeStyle: "short" }).format(new Date(cycle.fulfillmentAt))}</p></> : <><strong>El próximo menú se publicará desde administración.</strong><p>Vuelve pronto para conocer la fecha de entrega.</p></>}
+            {cycle && cycle.isOpen ? <><strong>{cycle.publicMessage || "Pedidos disponibles para este ciclo."}</strong><p>{cycle.fulfillmentModes.includes("pickup") && cycle.fulfillmentModes.includes("delivery") ? "Retiro o entrega" : cycle.fulfillmentModes.includes("pickup") ? "Retiro" : "Entrega"}: {new Intl.DateTimeFormat("es-EC", { dateStyle: "long", timeStyle: "short" }).format(new Date(cycle.fulfillmentAt))} · Pedidos hasta el {new Intl.DateTimeFormat("es-EC", { dateStyle: "medium", timeStyle: "short" }).format(new Date(cycle.closesAt))}</p></>
+              : cycle ? <><strong>Los pedidos abren el {new Intl.DateTimeFormat("es-EC", { dateStyle: "long", timeStyle: "short" }).format(new Date(cycle.opensAt))}.</strong><p>{cycle.publicMessage || `Entrega ${new Intl.DateTimeFormat("es-EC", { dateStyle: "long" }).format(new Date(cycle.fulfillmentAt))}. Ya puedes ver el menú.`}</p></>
+              : <><strong>El próximo menú se publicará desde administración.</strong><p>Vuelve pronto para conocer la fecha de entrega.</p></>}
           </div>
         </div>
       </section>
@@ -168,19 +171,22 @@ export function Storefront() {
             <article className="product-card" key={product.id}>
               <div className="product-visual">
                 {product.image ? <Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 650px) 100vw, 33vw" unoptimized /> : <div className="brand-product-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={334} height={170} /></div>}
-                {product.badge && <span className="product-badge">{product.badge}</span>}
+                {product.available === 0 ? <span className="product-badge product-badge-soldout">Agotado</span> : product.badge && <span className="product-badge">{product.badge}</span>}
               </div>
               <div className="product-copy">
                 <h3>{product.name}</h3>
                 <p>{product.description}</p>
                 <div className="product-footer">
-                  <span className="product-price">Desde {money.format(product.price)}</span>
-                  <button className="add-button" type="button" aria-label={`Personalizar ${product.name}`} onClick={() => openProduct(product)}><Plus size={20} /></button>
+                  <span className="product-price">Desde {money.format(product.price)}{product.available > 0 && product.available <= 5 && <small className="product-stock"> · quedan {product.available}</small>}</span>
+                  <button className="add-button" type="button" aria-label={product.available === 0 ? `${product.name} agotado` : !cycle?.isOpen ? `${product.name}: los pedidos aún no abren` : `Personalizar ${product.name}`} disabled={product.available === 0 || !cycle?.isOpen} onClick={() => openProduct(product)}><Plus size={20} /></button>
                 </div>
               </div>
             </article>
           ))}
-          {!catalogLoading && products.every((product) => activeCategory !== 'Todo' && product.category !== activeCategory) && (
+          {!catalogLoading && catalogError && (
+            <div className="menu-empty"><strong>No pudimos cargar el menú.</strong><p>Revisa tu conexión e intenta nuevamente en unos segundos.</p></div>
+          )}
+          {!catalogLoading && !catalogError && products.every((product) => activeCategory !== 'Todo' && product.category !== activeCategory) && (
             <div className="menu-empty"><strong>{products.length ? "No hay productos en esta categoría." : "El menú aún no está publicado."}</strong><p>{products.length ? "Selecciona otra categoría." : "La administración está preparando el primer ciclo de venta."}</p></div>
           )}
           {catalogLoading && <div className="menu-empty"><strong>Cargando menú…</strong></div>}
@@ -252,7 +258,8 @@ export function Storefront() {
                 </div>
               </div>
               {!configurationValid && <p className="configuration-error">Completa las selecciones requeridas para continuar.</p>}
-              <button className="modal-add" type="button" disabled={!configurationValid} onClick={addToCart}>Agregar al pedido · {money.format(modalTotal)}</button>
+              {configurationValid && quantity > selectedProduct.available && <p className="configuration-error">Solo quedan {selectedProduct.available} unidades disponibles.</p>}
+              <button className="modal-add" type="button" disabled={!configurationValid || quantity > selectedProduct.available} onClick={addToCart}>Agregar al pedido · {money.format(modalTotal)}</button>
               </div>
             </div>
           </section>

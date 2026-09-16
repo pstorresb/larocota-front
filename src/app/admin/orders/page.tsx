@@ -3,7 +3,8 @@
 import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, Clock3, Eye, FileCheck2, MapPin, MessageCircle, RefreshCw, Search, ShoppingBag, X, XCircle } from "lucide-react";
-import { api, ApiError, paymentProofUrl, type AdminOrder, type AdminOrderDetail } from "@/lib/api/client";
+import { api, ApiError, paymentProofUrl, type AdminOrder, type AdminOrderDetail, type OrderStatus } from "@/lib/api/client";
+import { OrderProgress } from "@/features/admin/order-progress";
 
 const statusLabels: Record<string, string> = { draft: "Borrador", payment_pending: "Pago pendiente", payment_review: "Pago en revisión", payment_rejected: "Pago rechazado", confirmed: "Confirmado", in_preparation: "En preparación", ready: "Listo", out_for_delivery: "En reparto", delivered: "Entregado", cancelled: "Cancelado" };
 const money = (value: string) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(Number(value));
@@ -86,18 +87,10 @@ export default function AdminOrdersPage() {
     finally { setReviewing(false); }
   }
 
-  function nextStatus(order: AdminOrderDetail) {
-    if (order.status === "confirmed") return { status: "in_preparation", label: "Iniciar preparación" };
-    if (order.status === "in_preparation") return { status: "ready", label: order.fulfillmentType === "pickup" ? "Marcar listo para retiro" : "Marcar listo para entrega" };
-    if (order.status === "ready") return order.fulfillmentType === "delivery" ? { status: "out_for_delivery", label: "Marcar en camino" } : { status: "delivered", label: "Marcar entregado" };
-    if (order.status === "out_for_delivery") return { status: "delivered", label: "Marcar entregado" };
-    return null;
-  }
-  async function advanceOrder() {
+  async function changeStatus(status: OrderStatus, publicNote?: string) {
     if (!selected) return;
-    const next = nextStatus(selected); if (!next) return;
     setUpdatingStatus(true); setDetailError("");
-    try { await api.updateOrderStatus(selected.id, { status: next.status }); setSelected((await api.adminOrder(selected.id)).order); await load(); }
+    try { await api.updateOrderStatus(selected.id, { status, publicNote }); setSelected((await api.adminOrder(selected.id)).order); await load(); }
     catch (cause) { setDetailError(cause instanceof ApiError ? cause.message : "No pudimos actualizar el estado."); }
     finally { setUpdatingStatus(false); }
   }
@@ -132,7 +125,7 @@ export default function AdminOrdersPage() {
           {!canReview && selected.proof?.status === "approved" && <div className="payment-reviewed-message"><CheckCircle2 size={18} /> Este pago ya fue aprobado y el pedido está confirmado.</div>}
           {detailError && <p className="form-error" role="alert">{detailError}</p>}
         </section>
-        {nextStatus(selected) && <section className="order-detail-section order-progress-section"><h3>Siguiente paso</h3><p>Actualiza el estado operativo. El cliente recibirá un correo cuando corresponda.</p><button className="approve-payment" type="button" disabled={updatingStatus} onClick={() => void advanceOrder()}>{updatingStatus ? "Actualizando…" : nextStatus(selected)?.label}</button></section>}
+        <OrderProgress order={selected} busy={updatingStatus} onAdvance={(status) => void changeStatus(status)} onCancel={(cancelReason) => void changeStatus("cancelled", cancelReason)} />
         {selected.history.length > 0 && <section className="order-detail-section order-history-section"><div className="order-history-heading"><div><span className="section-kicker">Trazabilidad</span><h3>Historial del pedido</h3><p>Cada actualización queda registrada para el equipo.</p></div><span>{selected.history.length} {selected.history.length === 1 ? "evento" : "eventos"}</span></div><div className="order-history">{selected.history.map((entry, index) => <article className={`history-entry history-${entry.toStatus}`} key={entry.id}><div className="history-rail"><i>{index === 0 ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}</i></div><div className="history-content"><div><strong>{statusLabels[entry.toStatus] ?? entry.toStatus}</strong><time><Clock3 size={13} /> {dateTime(entry.createdAt)}</time></div><p>{entry.publicNote || "Estado actualizado"}</p>{entry.actorName && <small>Actualizado por {entry.actorName}</small>}</div></article>)}</div></section>}
       </div>
     </section></div>}
