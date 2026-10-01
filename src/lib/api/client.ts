@@ -10,12 +10,13 @@ export type AdminUser = AuthUser & { status: UserStatus; createdAt: string; orde
 
 export type CustomerOrder = {
   id: string; orderNumber: string; status: OrderStatus; fulfillmentType: FulfillmentType; currency: string;
-  subtotal: string; taxTotal: string; total: string; createdAt: string; submittedAt: string | null; fulfillmentAt: string;
+  subtotal: string; taxTotal: string; total: string; createdAt: string; submittedAt: string | null;
+  fulfillmentStartsAt: string; fulfillmentEndsAt: string; slotStartsAt: string | null; slotEndsAt: string | null;
   paymentDeadline: string | null;
   items: { name: string; quantity: number; lineTotal: string }[];
 };
 
-export type AddressSnapshot = { addressLine: string; requestedDeliveryTime?: string; sector: string; reference: string; locationText?: string; latitude?: number; longitude?: number };
+export type AddressSnapshot = { addressLine: string; sector: string; reference: string; locationText?: string; latitude?: number; longitude?: number };
 export type ContactSnapshot = { email: string; firstName: string; lastName: string; phone: string };
 export type OrderHistoryEntry = { id: string; fromStatus: OrderStatus | null; toStatus: OrderStatus; publicNote: string | null; createdAt: string };
 export type CustomerProof = { id: string; status: "pending" | "under_review" | "approved" | "rejected" | "superseded"; originalName: string; rejectionReason: string | null; createdAt: string; reviewedAt: string | null };
@@ -25,16 +26,16 @@ export type CustomerOrderDetail = {
   contactSnapshot: ContactSnapshot; addressSnapshot: AddressSnapshot | null; customerNotes: string | null; adminPublicNote: string | null;
   currency: string; subtotal: string; taxTotal: string; total: string;
   createdAt: string; submittedAt: string | null; confirmedAt: string | null; cancelledAt: string | null; deliveredAt: string | null;
-  cycleName: string; fulfillmentAt: string; paymentDeadline: string | null;
+  cycleName: string; fulfillmentStartsAt: string; fulfillmentEndsAt: string; slotStartsAt: string | null; slotEndsAt: string | null; paymentDeadline: string | null;
   items: Array<{ id: string; name: string; quantity: number; unitTotal: string; lineTotal: string; taxTotal: string; customerNote: string | null; snapshotJson: { modifiers?: Array<{ optionName: string; quantity: number }> } }>;
   proof: CustomerProof | null;
   history: OrderHistoryEntry[];
 };
 
-export type AdminOrder = { id: string; orderNumber: string; status: OrderStatus; total: string; currency: string; fulfillmentType: FulfillmentType; createdAt: string; firstName: string; lastName: string; email: string };
+export type AdminOrder = { id: string; orderNumber: string; status: OrderStatus; total: string; currency: string; fulfillmentType: FulfillmentType; createdAt: string; slotStartsAt: string | null; slotEndsAt: string | null; firstName: string; lastName: string; email: string };
 export type AdminOrderDetail = AdminOrder & {
   contactSnapshot: ContactSnapshot; addressSnapshot: AddressSnapshot | null; customerNotes: string | null; adminPublicNote: string | null; adminPrivateNote: string | null;
-  subtotal: string; taxTotal: string; submittedAt: string | null; confirmedAt: string | null; fulfillmentAt: string; paymentDeadline: string | null;
+  subtotal: string; taxTotal: string; submittedAt: string | null; confirmedAt: string | null; fulfillmentStartsAt: string; fulfillmentEndsAt: string; paymentDeadline: string | null;
   items: Array<{ id: string; name: string; quantity: number; unitBasePrice: string; modifierTotal: string; unitTotal: string; lineTotal: string; taxTotal: string; customerNote: string | null; snapshotJson: { modifiers?: Array<{ optionName: string; quantity: number }> } }>;
   proof: { id: string; status: string; originalName: string; mimeType: string; sizeBytes: number; rejectionReason: string | null; createdAt: string; reviewedAt: string | null } | null;
   history: Array<{ id: string; fromStatus: string | null; toStatus: string; publicNote: string | null; createdAt: string; actorName: string | null }>;
@@ -45,11 +46,26 @@ export type ModifierOption = { id: string; name: string; description: string | n
 export type ModifierGroup = { id: string; productId: string; name: string; description: string | null; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; sortOrder: number; options: ModifierOption[] };
 export type ModifierSelection = { groupId: string; options: { optionId: string; quantity: number }[] };
 export type CatalogProduct = { id: string; name: string; slug: string; description: string; categoryId: string; category: string; categorySlug: string; imageUrl: string | null; imageAlt: string | null; badge: string | null; basePriceCents: number; taxRateBps: number; available: number; modifierGroups: ModifierGroup[] };
-export type CatalogCycle = { id: string; name: string; status: string; opensAt: string; closesAt: string; fulfillmentAt: string; publicMessage: string | null; fulfillmentModes: FulfillmentType[]; isOpen: boolean };
+export type CatalogSlot = { startsAt: string; endsAt: string; remaining: number | null };
+export type CatalogCycle = {
+  id: string; name: string; status: string; opensAt: string; closesAt: string;
+  fulfillmentStartsAt: string; fulfillmentEndsAt: string; slotMinutes: number; slotCapacity: number | null;
+  globalCapacity: number | null; globalRemaining: number | null;
+  publicMessage: string | null; fulfillmentModes: FulfillmentType[]; isOpen: boolean; slots: CatalogSlot[];
+};
+export type CatalogResponse = { cycle: CatalogCycle | null; categories: CatalogCategory[]; products: CatalogProduct[] };
 
 export type AdminCategory = CatalogCategory & { description: string | null; isActive: boolean; createdAt: string; productCount: number };
 export type AdminProduct = { id: string; categoryId: string; categoryName: string; name: string; slug: string; shortDescription: string; description: string | null; imageKey: string | null; imageAlt: string | null; badge: string | null; basePrice: string; taxRate: string; sortOrder: number; isActive: boolean; createdAt: string };
-export type AdminCycle = { id: string; name: string; opensAt: string; closesAt: string; fulfillmentAt: string; status: "draft" | "scheduled" | "open" | "closed" | "fulfilled" | "cancelled"; globalCapacity: number | null; fulfillmentModes: FulfillmentType[]; publicMessage: string | null; createdAt: string; productCount: number; orderCount: number };
+export type CycleStatus = "draft" | "scheduled" | "open" | "closed" | "fulfilled" | "cancelled";
+export type AdminCycle = {
+  id: string; name: string; opensAt: string; closesAt: string; fulfillmentStartsAt: string; fulfillmentEndsAt: string;
+  slotMinutes: 30 | 60; slotCapacity: number | null; status: CycleStatus; globalCapacity: number | null;
+  fulfillmentModes: FulfillmentType[]; publicMessage: string | null; createdAt: string; productCount: number; orderCount: number; activeOrderCount: number;
+};
+export type AdminCycleInput = { name: string; opensAt: string; closesAt: string; fulfillmentStartsAt: string; fulfillmentEndsAt: string; slotMinutes: 30 | 60; slotCapacity: number | null; globalCapacity: number | null; fulfillmentModes: FulfillmentType[]; publicMessage?: string };
+export type AdminCycleSlot = { startsAt: string; endsAt: string; capacity: number | null; orders: number; pickup: number; delivery: number; items: Array<{ id: string; orderNumber: string; status: OrderStatus; fulfillmentType: FulfillmentType; customerName: string }> };
+export type AdminCycleSlots = { cycle: { id: string; name: string; fulfillmentStartsAt: string; fulfillmentEndsAt: string; slotMinutes: number; slotCapacity: number | null }; slots: AdminCycleSlot[]; unassigned: AdminCycleSlot["items"] };
 export type AdminCycleProduct = { productId: string; capacity: number | null; priceOverride: string | null; isAvailable: boolean; sortOrder: number };
 
 export type PublicPaymentSettings = { bankName: string; accountType: string; accountNumber: string; holderName: string; instructions: string };
@@ -60,6 +76,8 @@ export type PublicSettings = { payment: PublicPaymentSettings | null; pickup: Pi
 export type CheckoutInput = {
   cycleId: string;
   fulfillmentType: FulfillmentType;
+  /** Start of the chosen fulfillment slot, exactly as received in `CatalogCycle.slots`. */
+  slotStartsAt: string;
   contact: ContactSnapshot;
   address?: AddressSnapshot | null;
   customerNotes?: string;
@@ -95,7 +113,7 @@ export function googleAuthUrl(next = "/account") {
 }
 
 export const api = {
-  catalog: () => request<{ cycle: CatalogCycle | null; categories: CatalogCategory[]; products: CatalogProduct[] }>("/catalog"),
+  catalog: () => request<CatalogResponse>("/catalog"),
   publicSettings: () => request<PublicSettings>("/settings/public"),
   login: (input: { email: string; password: string }) => request<{ user: AuthUser }>("/auth/login", { method: "POST", body: JSON.stringify(input) }),
   requestSignupCode: (input: { email: string; password: string; firstName: string; lastName: string; phone?: string }) => request<{ expiresInSeconds: number }>("/auth/register/request-code", { method: "POST", body: JSON.stringify(input) }),
@@ -108,7 +126,7 @@ export const api = {
   myOrders: () => request<{ orders: CustomerOrder[] }>("/orders/mine"),
   myOrder: (orderNumber: string) => request<{ order: CustomerOrderDetail }>(`/orders/${encodeURIComponent(orderNumber)}`),
   quoteOrder: (input: { cycleId: string; items: Array<{ productId: string; quantity: number; selections: ModifierSelection[] }> }) => request<{ currency: string; subtotalCents: number; taxCents: number; totalCents: number; items: Array<{ productId: string; modifierCents: number; unitCents: number }> }>("/orders/quote", { method: "POST", body: JSON.stringify(input) }),
-  createOrder: (input: CheckoutInput) => request<{ order: { id: string; orderNumber: string; status: OrderStatus; totalCents: number; paymentDeadline: string } }>("/orders", { method: "POST", body: JSON.stringify(input) }),
+  createOrder: (input: CheckoutInput) => request<{ order: { id: string; orderNumber: string; status: OrderStatus; totalCents: number; paymentDeadline: string; slotStartsAt: string; slotEndsAt: string } }>("/orders", { method: "POST", body: JSON.stringify(input) }),
   uploadProof: (orderId: string, file: File) => { const data = new FormData(); data.append("file", file); return request<{ proof: { id: string; status: string; createdAt: string } }>(`/orders/${orderId}/payment-proof`, { method: "POST", body: data }); },
 
   adminDashboard: () => request<{ cycle: { id: string; name: string; globalCapacity: number | null } | null; metrics: { orders: number; sales: string; averageTicket: string; pendingPayments: number }; products: { name: string; units: number; capacity: number }[] }>("/admin/dashboard"),
@@ -137,8 +155,10 @@ export const api = {
   deleteProduct: (id: string) => request<void>(`/admin/products/${id}`, { method: "DELETE" }),
   adminCycles: () => request<{ cycles: AdminCycle[] }>("/admin/cycles"),
   adminCycleProducts: (id: string) => request<{ products: AdminCycleProduct[] }>(`/admin/cycles/${id}/products`),
-  createCycle: (input: { name: string; opensAt: string; closesAt: string; fulfillmentAt: string; globalCapacity: number | null; fulfillmentModes: FulfillmentType[]; publicMessage?: string }) => request<{ cycle: AdminCycle }>("/admin/cycles", { method: "POST", body: JSON.stringify(input) }),
-  updateCycle: (id: string, input: Partial<{ name: string; opensAt: string; closesAt: string; fulfillmentAt: string; globalCapacity: number | null; fulfillmentModes: FulfillmentType[]; publicMessage: string; status: AdminCycle["status"] }>) => request<{ cycle: AdminCycle }>(`/admin/cycles/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  createCycle: (input: AdminCycleInput) => request<{ cycle: AdminCycle }>("/admin/cycles", { method: "POST", body: JSON.stringify(input) }),
+  updateCycle: (id: string, input: Partial<AdminCycleInput & { status: CycleStatus }>) => request<{ cycle: AdminCycle }>(`/admin/cycles/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  adminCycleSlots: (id: string) => request<AdminCycleSlots>(`/admin/cycles/${id}/slots`),
+  duplicateCycle: (id: string) => request<{ cycle: AdminCycle }>(`/admin/cycles/${id}/duplicate`, { method: "POST" }),
   deleteCycle: (id: string) => request<void>(`/admin/cycles/${id}`, { method: "DELETE" }),
   setCycleProducts: (id: string, products: { productId: string; capacity: number | null; priceOverride: number | null; isAvailable: boolean; sortOrder: number }[]) => request<{ products: AdminCycleProduct[] }>(`/admin/cycles/${id}/products`, { method: "PUT", body: JSON.stringify({ products }) }),
 };

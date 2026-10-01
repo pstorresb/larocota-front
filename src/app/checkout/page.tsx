@@ -3,12 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Clock3, Copy, ExternalLink, FileUp, Landmark, LocateFixed, LockKeyhole, MapPin, Navigation, Store, Truck } from "lucide-react";
+import { CheckCircle2, Clock3, Copy, ExternalLink, FileUp, Landmark, LocateFixed, LockKeyhole, MapPin, Navigation, Truck } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { SiteHeader } from "@/components/site-header";
-import { cartTotal, useCart } from "@/features/cart/cart-store";
+import { SiteHeader } from "@/components/site-header/site-header";
+import { cartTotal, useCart, useCartHydrated } from "@/features/cart/cart-store";
+import { FulfillmentPicker } from "@/features/checkout/fulfillment-picker";
 import { api, ApiError, type AuthUser, type CatalogCycle, type FulfillmentType, type PublicSettings } from "@/lib/api/client";
-import { longDate, money } from "@/lib/order-status";
+import { money, slotRange, weekdayLongDate } from "@/lib/order-status";
 
 type Contact = Pick<AuthUser, "email" | "firstName" | "lastName"> & { phone: string };
 const ecuadorPhone = /^0\d{9}$/;
@@ -31,13 +32,9 @@ function extractCoordinates(value: string) {
   return null;
 }
 
-const modeCopy: Record<FulfillmentType, { title: string; hint: string }> = {
-  pickup: { title: "Retiro en el local", hint: "Sin costo. Te avisamos cuando esté listo." },
-  delivery: { title: "Entrega a domicilio", hint: "Gratuita dentro de Ibarra." },
-};
-
 export default function CheckoutPage() {
   const router = useRouter();
+  const hydrated = useCartHydrated();
   const items = useCart((state) => state.items);
   const cycleId = useCart((state) => state.cycleId);
   const clear = useCart((state) => state.clear);
@@ -49,6 +46,7 @@ export default function CheckoutPage() {
   const [cycle, setCycle] = useState<CatalogCycle | null>(null);
   const [settings, setSettings] = useState<PublicSettings>({ payment: null, pickup: null });
   const [mode, setMode] = useState<FulfillmentType | null>(null);
+  const [slotStartsAt, setSlotStartsAt] = useState<string | null>(null);
   const [contact, setContact] = useState<Contact>({ email: "", firstName: "", lastName: "", phone: "" });
   const [accountLoaded, setAccountLoaded] = useState(false);
   const [sessionResolved, setSessionResolved] = useState(false);
@@ -70,7 +68,8 @@ export default function CheckoutPage() {
   const pickup = settings.pickup;
   const mapSrc = coordinates ? `https://www.openstreetmap.org/export/embed.html?bbox=${coordinates.longitude - .006}%2C${coordinates.latitude - .004}%2C${coordinates.longitude + .006}%2C${coordinates.latitude + .004}&layer=mapnik&marker=${coordinates.latitude}%2C${coordinates.longitude}` : null;
   const mapLink = coordinates ? `https://www.openstreetmap.org/?mlat=${coordinates.latitude}&mlon=${coordinates.longitude}#map=17/${coordinates.latitude}/${coordinates.longitude}` : null;
-  const fulfillmentDate = cycle ? longDate.format(new Date(cycle.fulfillmentAt)) : null;
+  const fulfillmentDate = cycle ? weekdayLongDate.format(new Date(cycle.fulfillmentStartsAt)) : null;
+  const selectedSlot = cycle?.slots.find((slot) => slot.startsAt === slotStartsAt) ?? null;
 
   useEffect(() => {
     let active = true;
@@ -95,13 +94,13 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    if (!cycleId || items.length === 0) return;
+    if (!hydrated || !cycleId || items.length === 0) return;
     let active = true;
     api.quoteOrder({ cycleId, items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, selections: item.selections })) })
       .then((result) => { if (active) { setQuote({ ...result, signature: quoteSignature }); setErrorMessage(""); } })
       .catch((reason) => { if (active) { setQuote(null); setErrorMessage(reason instanceof ApiError ? reason.message : "No pudimos validar los precios del pedido."); } });
     return () => { active = false; };
-  }, [cycleId, items, quoteSignature]);
+  }, [hydrated, cycleId, items, quoteSignature]);
 
   function updateContact(field: keyof Contact, value: string) {
     setContact((current) => ({ ...current, [field]: value }));
@@ -144,24 +143,23 @@ export default function CheckoutPage() {
     const data = new FormData(form);
     const proofFile = selectedFile;
     const addressLine = String(data.get("addressLine") ?? "").trim();
-    const requestedDeliveryTime = String(data.get("requestedDeliveryTime") ?? "");
     const normalizedContact = { email: contact.email.trim(), firstName: contact.firstName.trim(), lastName: contact.lastName.trim(), phone: contact.phone.trim() };
     const isDelivery = mode === "delivery";
     const issue = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedContact.email) ? { field: "email", message: "Ingresa un correo electrónico válido." }
       : normalizedContact.firstName.length < 2 ? { field: "firstName", message: "Ingresa tu nombre." }
       : normalizedContact.lastName.length < 2 ? { field: "lastName", message: "Ingresa tu apellido." }
       : !ecuadorPhone.test(normalizedContact.phone) ? { field: "phone", message: "Ingresa un teléfono ecuatoriano de 10 dígitos, en formato 0XXXXXXXXX." }
+      : !slotStartsAt ? { field: "slot", message: "Elige una franja horaria para recibir tu pedido." }
       : isDelivery && addressLine.length < 8 ? { field: "addressLine", message: "Completa la dirección de entrega con al menos 8 caracteres." }
-      : isDelivery && !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedDeliveryTime) ? { field: "requestedDeliveryTime", message: "Selecciona la hora aproximada en que deseas recibir el pedido." }
       : !proofFile ? { field: "proof", message: "Sube el comprobante de la transferencia." }
       : null;
     if (issue) {
       setErrorMessage(issue.message);
-      const field = form.elements.namedItem(issue.field);
-      if (field instanceof HTMLElement) { field.focus(); field.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      const field = issue.field === "slot" ? form.querySelector(".slot-picker") : form.elements.namedItem(issue.field);
+      if (field instanceof HTMLElement) { if (issue.field !== "slot") field.focus(); field.scrollIntoView({ behavior: "smooth", block: "center" }); }
       return;
     }
-    if (!proofFile) return;
+    if (!proofFile || !slotStartsAt) return;
     setSubmitting(true);
     setErrorMessage("");
     let orderNumber: string | null = null;
@@ -169,10 +167,10 @@ export default function CheckoutPage() {
       const result = await api.createOrder({
         cycleId,
         fulfillmentType: mode,
+        slotStartsAt,
         contact: normalizedContact,
         address: isDelivery ? {
           addressLine,
-          requestedDeliveryTime,
           sector: String(data.get("sector") ?? "").trim(),
           reference: String(data.get("reference") ?? "").trim(),
           locationText: locationText || undefined,
@@ -193,12 +191,17 @@ export default function CheckoutPage() {
         router.push(`/order-confirmation/${orderNumber}?proof=missing`);
         return;
       }
+      if (reason instanceof ApiError && (reason.code === "SLOT_FULL" || reason.code === "INVALID_SLOT")) {
+        // Someone took the last seat: refresh the slot grid so the customer can pick another one.
+        setSlotStartsAt(null);
+        api.catalog().then((fresh) => setCycle(fresh.cycle)).catch(() => undefined);
+      }
       setErrorMessage(reason instanceof ApiError ? reason.message : "No pudimos conectar con el servicio. Intenta nuevamente.");
       setSubmitting(false);
     }
   }
 
-  const canSubmit = accountLoaded && items.length > 0 && Boolean(cycleId) && Boolean(activeQuote) && Boolean(mode) && Boolean(payment) && !submitting;
+  const canSubmit = accountLoaded && items.length > 0 && Boolean(cycleId) && Boolean(activeQuote) && Boolean(mode) && Boolean(slotStartsAt) && Boolean(payment) && !submitting;
 
   return <main className="checkout-page">
     <SiteHeader backHref="/#menu" />
@@ -215,8 +218,8 @@ export default function CheckoutPage() {
         ) : <>
           <div className="checkout-title">
             <p className="section-kicker">Último paso</p>
-            <h1>{mode === "pickup" ? "¿Cuándo pasas por tu pedido?" : "¿Dónde entregamos tu pedido?"}</h1>
-            <p>Confirma tus datos, elige cómo recibirlo y sube el comprobante de transferencia.</p>
+            <h1>{mode === "pickup" ? "¿Cuándo pasas por tu pedido?" : "¿Cuándo y dónde te lo llevamos?"}</h1>
+            <p>Confirma tus datos, elige tu franja y sube el comprobante de transferencia.</p>
             <small className="required-fields-note"><span>*</span> Campos obligatorios</small>
           </div>
           <form id="checkout-form" noValidate onSubmit={submitOrder}>
@@ -232,51 +235,25 @@ export default function CheckoutPage() {
             </section>
 
             <section className="checkout-card">
-              <div className="checkout-card-heading"><span>2</span><div><h2>¿Cómo recibes tu pedido?</h2><p>{fulfillmentDate ? `Preparamos todo para el ${fulfillmentDate}.` : "La fecha se confirmará con el ciclo de venta."}</p></div></div>
-              {allowedModes.length === 0 ? (
+              <div className="checkout-card-heading"><span>2</span><div><h2>¿Cómo y cuándo recibes tu pedido?</h2><p>{fulfillmentDate ? `Entregamos el ${fulfillmentDate}. Elige la modalidad y tu franja.` : "La fecha se confirmará con el ciclo de venta."}</p></div></div>
+              {!cycle || allowedModes.length === 0 ? (
                 <p className="form-error" role="alert">No hay un ciclo de venta abierto en este momento. Vuelve al menú para revisar la próxima fecha.</p>
               ) : (
-                <div className="fulfillment-choices" role="radiogroup" aria-label="Modalidad de entrega">
-                  {allowedModes.map((option) => (
-                    <button key={option} type="button" role="radio" aria-checked={mode === option} className={`fulfillment-option ${mode === option ? "selected" : ""}`} onClick={() => setMode(option)}>
-                      {option === "pickup" ? <Store size={21} /> : <Truck size={21} />}
-                      <div><strong>{modeCopy[option].title}</strong><span>{modeCopy[option].hint}</span></div>
-                      <b>{option === "pickup" ? "Sin costo" : "$0,00"}</b>
-                    </button>
-                  ))}
-                </div>
+                <FulfillmentPicker cycle={cycle} mode={mode} onModeChange={setMode} slotStartsAt={slotStartsAt} onSlotChange={setSlotStartsAt} pickup={pickup}>
+                  <div className="delivery-banner"><Truck size={21} /><div><strong>Entrega gratuita en Ibarra</strong><span>{selectedSlot ? slotRange(selectedSlot.startsAt, selectedSlot.endsAt) : fulfillmentDate ?? "Fecha por confirmar"}</span></div><b>Gratis</b></div>
+                  <div className="field-grid address-fields">
+                    <label className="field field-full"><span className="field-label">Dirección completa <span className="required-mark" aria-hidden="true">*</span></span><input required minLength={8} name="addressLine" autoComplete="street-address" placeholder="Ej. Av. Mariano Acosta y Gabriela Mistral, casa 12" /><small>Incluye calle principal, intersección y número de casa, edificio o local.</small></label>
+                    <label className="field field-full"><span className="field-label">Sector o barrio <span className="label-optional">Opcional</span></span><input name="sector" autoComplete="address-level3" placeholder="Ej. Los Ceibos, Caranqui, centro de Ibarra" /></label>
+                    <label className="field field-full"><span className="field-label">Referencia para encontrar el lugar <span className="label-optional">Opcional</span></span><textarea name="reference" maxLength={500} rows={3} placeholder="Ej. Casa esquinera color blanco, portón negro; junto a la farmacia…" /><small>Si ayuda, describe fachada, piso, entrada o algún local cercano.</small></label>
+                  </div>
+                  <div className="location-card">
+                    <div className="location-card-heading"><div><Navigation size={18} /><span><strong>Ubicación exacta</strong><small>Opcional, pero recomendada para una entrega más rápida.</small></span></div><button type="button" onClick={useCurrentLocation} disabled={locating}><LocateFixed size={16} /> {locating ? "Obteniendo…" : "Usar mi ubicación"}</button></div>
+                    <label className="field">Enlace de Google Maps o coordenadas<input value={locationText} onChange={(event) => { const value = event.target.value; const parsed = extractCoordinates(value); setLocationText(value); setCoordinates(parsed); setLocationStatus(parsed ? "Ubicación reconocida. Revisa el punto en el mapa." : value ? "No encontramos coordenadas en el texto. Puedes escribirlas como latitud, longitud." : ""); }} placeholder="Pega aquí el enlace compartido o -0.3517, -78.1223" /></label>
+                    {locationStatus && <p className="location-status" aria-live="polite">{locationStatus}</p>}
+                    {mapSrc && <div className="location-map-preview"><iframe title="Vista previa de la ubicación de entrega" src={mapSrc} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" /><div><span><MapPin size={14} /> Punto de entrega</span>{mapLink && <a href={mapLink} target="_blank" rel="noreferrer">Abrir mapa <ExternalLink size={13} /></a>}</div></div>}
+                  </div>
+                </FulfillmentPicker>
               )}
-
-              {mode === "pickup" && (
-                <div className="location-card pickup-card">
-                  <div className="location-card-heading"><div><MapPin size={18} /><span><strong>Punto de retiro</strong><small>{pickup ? "Te avisamos por correo cuando esté listo." : "Te confirmaremos la dirección exacta por correo."}</small></span></div></div>
-                  {pickup ? (
-                    <dl className="pickup-details">
-                      <div><dt>Dirección</dt><dd>{pickup.addressLine}</dd></div>
-                      {pickup.reference && <div><dt>Referencia</dt><dd>{pickup.reference}</dd></div>}
-                      {pickup.hours && <div><dt>Horario de retiro</dt><dd>{pickup.hours}</dd></div>}
-                      {pickup.instructions && <div><dt>Indicaciones</dt><dd>{pickup.instructions}</dd></div>}
-                    </dl>
-                  ) : <p className="location-status">Ibarra, Ecuador.</p>}
-                  {pickup?.mapUrl && <a className="text-link pickup-map-link" href={pickup.mapUrl} target="_blank" rel="noreferrer">Ver en el mapa <ExternalLink size={13} /></a>}
-                </div>
-              )}
-
-              {mode === "delivery" && <>
-                <div className="delivery-banner"><Truck size={21} /><div><strong>Entrega gratuita en Ibarra</strong><span>{fulfillmentDate ?? "Fecha por confirmar"}</span></div><b>$0,00</b></div>
-                <div className="field-grid address-fields">
-                  <label className="field field-full"><span className="field-label">Dirección completa <span className="required-mark" aria-hidden="true">*</span></span><input required minLength={8} name="addressLine" autoComplete="street-address" placeholder="Ej. Av. Mariano Acosta y Gabriela Mistral, casa 12" /><small>Incluye calle principal, intersección y número de casa, edificio o local.</small></label>
-                  <label className="field field-full delivery-time-field"><span className="field-label">Hora aproximada de entrega <span className="required-mark" aria-hidden="true">*</span></span><input required name="requestedDeliveryTime" type="time" /><small>La confirmaremos contigo después de validar el pago.</small></label>
-                  <label className="field field-full"><span className="field-label">Sector o barrio <span className="label-optional">Opcional</span></span><input name="sector" autoComplete="address-level3" placeholder="Ej. Los Ceibos, Caranqui, centro de Ibarra" /></label>
-                  <label className="field field-full"><span className="field-label">Referencia para encontrar el lugar <span className="label-optional">Opcional</span></span><textarea name="reference" maxLength={500} rows={3} placeholder="Ej. Casa esquinera color blanco, portón negro; junto a la farmacia…" /><small>Si ayuda, describe fachada, piso, entrada o algún local cercano.</small></label>
-                </div>
-                <div className="location-card">
-                  <div className="location-card-heading"><div><Navigation size={18} /><span><strong>Ubicación exacta</strong><small>Opcional, pero recomendada para una entrega más rápida.</small></span></div><button type="button" onClick={useCurrentLocation} disabled={locating}><LocateFixed size={16} /> {locating ? "Obteniendo…" : "Usar mi ubicación"}</button></div>
-                  <label className="field">Enlace de Google Maps o coordenadas<input value={locationText} onChange={(event) => { const value = event.target.value; const parsed = extractCoordinates(value); setLocationText(value); setCoordinates(parsed); setLocationStatus(parsed ? "Ubicación reconocida. Revisa el punto en el mapa." : value ? "No encontramos coordenadas en el texto. Puedes escribirlas como latitud, longitud." : ""); }} placeholder="Pega aquí el enlace compartido o -0.3517, -78.1223" /></label>
-                  {locationStatus && <p className="location-status" aria-live="polite">{locationStatus}</p>}
-                  {mapSrc && <div className="location-map-preview"><iframe title="Vista previa de la ubicación de entrega" src={mapSrc} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" /><div><span><MapPin size={14} /> Punto de entrega</span>{mapLink && <a href={mapLink} target="_blank" rel="noreferrer">Abrir mapa <ExternalLink size={13} /></a>}</div></div>}
-                </div>
-              </>}
 
               <label className="field field-full delivery-note">Nota adicional para el pedido <span className="label-optional">Opcional</span><textarea name="notes" maxLength={500} rows={3} placeholder={mode === "pickup" ? "Ej. Paso a las 12:30; sin cubiertos…" : "Ej. Llamar al llegar; dejar en recepción; sin cubiertos…"} /></label>
             </section>
@@ -308,7 +285,7 @@ export default function CheckoutPage() {
 
       <aside className="order-summary">
         <p className="section-kicker">Resumen</p><h2>Tu pedido</h2>
-        <div className="summary-cycle"><Clock3 size={18} /><div><strong>{fulfillmentDate ? `${mode === "pickup" ? "Retiro" : "Entrega"} ${fulfillmentDate}` : "Sin ciclo activo"}</strong><span>{mode === "pickup" ? "Retiro en el local, sin costo" : "Entrega gratuita en Ibarra"}</span></div></div>
+        <div className="summary-cycle"><Clock3 size={18} /><div><strong>{!cycle ? "Sin ciclo activo" : selectedSlot ? `${mode === "pickup" ? "Retiro" : "Entrega"} ${slotRange(selectedSlot.startsAt, selectedSlot.endsAt)}` : `${mode === "pickup" ? "Retiro" : "Entrega"} el ${fulfillmentDate}`}</strong><span>{!cycle ? "Vuelve al menú para revisar la próxima fecha" : !selectedSlot ? "Elige tu franja horaria" : mode === "pickup" ? "Retiro en el local, sin costo" : "Entrega gratuita en Ibarra"}</span></div></div>
         <div className="summary-items">{items.length === 0 ? <p className="summary-empty">Aún no hay productos. Vuelve al menú para elegir.</p> : items.map((item) => <div className="summary-item" key={item.id}><Image src={item.image} alt="" width={62} height={54} unoptimized /><div><strong>{item.quantity} × {item.name}</strong><span>{item.modifiers.length ? item.modifiers.map((modifier) => `${modifier.quantity}× ${modifier.optionName}`).join(" · ") : "Sin modificaciones"}</span></div><b>{money.format(item.unitPrice * item.quantity)}</b></div>)}</div>
         <div className="summary-totals">
           <div><span>Subtotal</span><span>{money.format(subtotal)}</span></div>

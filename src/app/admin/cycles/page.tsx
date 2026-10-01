@@ -1,2 +1,3 @@
-import { CatalogCrud } from "@/features/admin/catalog-crud";
-export default function CyclesPage() { return <CatalogCrud mode="cycles" />; }
+import { CycleManager } from "@/features/admin/cycle-manager";
+
+export default function AdminCyclesPage() { return <CycleManager />; }

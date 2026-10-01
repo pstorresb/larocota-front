@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import Script from "next/script";
+import { CartHydration } from "@/features/cart/cart-hydration";
 import "./globals.css";
 
 const dmSans = localFont({
@@ -24,22 +25,23 @@ const allison = localFont({
   display: "swap",
 });
 
+const description = "Ensaladas, sánduches y quesadillas hechas bajo pedido en Ibarra. Pide en el ciclo abierto, paga por transferencia y recibe en tu franja: retiro en el local o entrega gratis.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "La Rocota | Comida fresca que sí provoca",
-  description:
-    "Pide con anticipación ensaladas, sánduches, quesadillas y bebidas frescas en Ibarra.",
+  title: "La Rocota · Comidita, nomás",
+  description,
   openGraph: {
-    title: "La Rocota | Comida fresca que sí provoca",
-    description: "Comida fresca preparada bajo pedido en Ibarra.",
+    title: "La Rocota · Comidita, nomás",
+    description,
     type: "website",
     locale: "es_EC",
-    images: [{ url: "/og.png", width: 1732, height: 908, alt: "La Rocota — Comida fresca que sí provoca" }],
+    images: [{ url: "/og.png", width: 1732, height: 908, alt: "La Rocota, comidita nomás" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "La Rocota | Comida fresca que sí provoca",
-    description: "Comida fresca preparada bajo pedido en Ibarra.",
+    title: "La Rocota · Comidita, nomás",
+    description,
     images: ["/og.png"],
   },
 };
@@ -49,6 +51,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es" data-scroll-behavior="smooth" data-theme="light" suppressHydrationWarning>
       <body className={`${dmSans.variable} ${poppins.variable} ${allison.variable}`}>
         <Script id="theme-init" strategy="beforeInteractive">{`try{var t=localStorage.getItem('larocota-theme');document.documentElement.dataset.theme=t==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}`}</Script>
+        <CartHydration />
         {children}
       </body>
     </html>

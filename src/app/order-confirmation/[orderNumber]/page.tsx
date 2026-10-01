@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Clock3, FileCheck2, FileUp, Mail, MapPin, Store, Truck, Utensils, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { SiteHeader } from "@/components/site-header";
+import { SiteHeader } from "@/components/site-header/site-header";
 import { api, ApiError, type CustomerOrderDetail, type PublicSettings } from "@/lib/api/client";
-import { longDate, longDateTime, money, orderStatusLabel, shortDateTime } from "@/lib/order-status";
+import { longDateTime, money, orderStatusLabel, shortDateTime, slotRange, weekdayLongDate } from "@/lib/order-status";
 
 type Step = { key: string; title: string; detail: string; state: "done" | "current" | "pending" };
 
@@ -17,12 +17,12 @@ function buildSteps(order: CustomerOrderDetail): Step[] {
   const paid = ["confirmed", "in_preparation", "ready", "out_for_delivery", "delivered"].includes(status);
   const preparing = ["in_preparation", "ready", "out_for_delivery", "delivered"].includes(status);
   const finished = status === "delivered";
-  const fulfillmentDate = longDate.format(new Date(order.fulfillmentAt));
+  const fulfillmentDate = order.slotStartsAt && order.slotEndsAt ? slotRange(order.slotStartsAt, order.slotEndsAt) : weekdayLongDate.format(new Date(order.fulfillmentStartsAt));
   const state = (value: Step["state"]) => (cancelled ? "pending" : value);
   return [
     { key: "received", title: "Pedido recibido", detail: status === "payment_pending" ? "Falta tu comprobante" : "Comprobante recibido", state: state(status === "payment_pending" ? "current" : "done") },
     { key: "paid", title: rejected ? "Comprobante rechazado" : "Pago confirmado", detail: rejected ? "Sube uno nuevo" : status === "payment_review" ? "En revisión" : paid ? "Validado" : "Te avisaremos por correo", state: state(paid ? "done" : rejected || status === "payment_review" ? "current" : "pending") },
-    { key: "prepared", title: order.fulfillmentType === "pickup" ? "Listo para retirar" : "En camino", detail: finished ? "Entregado" : `Para el ${fulfillmentDate}`, state: state(finished ? "done" : preparing ? "current" : "pending") },
+    { key: "prepared", title: order.fulfillmentType === "pickup" ? "Listo para retirar" : "En camino", detail: finished ? "Entregado" : fulfillmentDate, state: state(finished ? "done" : preparing ? "current" : "pending") },
   ];
 }
 
@@ -97,8 +97,8 @@ export default function OrderConfirmationPage() {
         <p className="confirmation-lead">Pedido <strong>{order.orderNumber}</strong> · {order.cycleName}. {order.adminPublicNote ? order.adminPublicNote : cancelled ? "Si crees que es un error, escríbenos." : "Te avisaremos por correo con cada novedad."}</p>
 
         <div className="confirmation-details">
-          <div>{order.fulfillmentType === "pickup" ? <Store size={20} /> : <Truck size={20} />}<span><b>{order.fulfillmentType === "pickup" ? "Retiro" : "Entrega"}</b>{longDateTime.format(new Date(order.fulfillmentAt))}{order.fulfillmentType === "delivery" && order.addressSnapshot?.requestedDeliveryTime ? ` · hora solicitada ${order.addressSnapshot.requestedDeliveryTime}` : ""}</span></div>
-          <div><MapPin size={20} /><span><b>{order.fulfillmentType === "pickup" ? "Punto de retiro" : "Dirección"}</b>{order.fulfillmentType === "pickup" ? (pickup ? `${pickup.addressLine}${pickup.hours ? ` · ${pickup.hours}` : ""}` : "Te confirmaremos la dirección por correo.") : order.addressSnapshot?.addressLine ?? "Sin dirección registrada"}</span></div>
+          <div>{order.fulfillmentType === "pickup" ? <Store size={20} /> : <Truck size={20} />}<span><b>{order.fulfillmentType === "pickup" ? "Retiro" : "Entrega"}</b>{order.slotStartsAt && order.slotEndsAt ? slotRange(order.slotStartsAt, order.slotEndsAt) : longDateTime.format(new Date(order.fulfillmentStartsAt))}</span></div>
+          <div><MapPin size={20} /><span><b>{order.fulfillmentType === "pickup" ? "Punto de retiro" : "Dirección"}</b>{order.fulfillmentType === "pickup" ? (pickup ? `${pickup.addressLine}${pickup.reference ? `, ${pickup.reference}` : ""}` : "Te confirmaremos la dirección por correo.") : order.addressSnapshot?.addressLine ?? "Sin dirección registrada"}</span></div>
           {needsProof && deadline && !cancelled && <div><Clock3 size={20} /><span><b>Plazo para el comprobante</b>{deadline}. Después, el pedido se cancela y liberamos los cupos.</span></div>}
           <div><Mail size={20} /><span><b>Confirmación</b>Recibirás las novedades en {order.contactSnapshot.email}.</span></div>
         </div>
