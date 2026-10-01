@@ -1,2 +1,3 @@
-import { CatalogCrud } from "@/features/admin/catalog-crud";
-export default function CategoriesPage() { return <CatalogCrud mode="categories" />; }
+import { CategoryManager } from "@/features/admin/category-manager";
+
+export default function AdminCategoriesPage() { return <CategoryManager />; }

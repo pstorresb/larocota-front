@@ -54,8 +54,8 @@ export function CartDrawer() {
           ))}
         </div>
         <div className="drawer-footer">
-          <div><span>Subtotal</span><strong>{money.format(cartTotal(items))}</strong></div>
-          <p>El total con IVA se confirma antes de crear tu pedido.</p>
+          <div><span>Total</span><strong>{money.format(cartTotal(items))}</strong></div>
+          <p>Precios finales, IVA incluido. La entrega es gratis.</p>
           {items.length > 0 && <Button className="drawer-checkout" href="/checkout" size="lg">Continuar al checkout <ArrowRight size={17} /></Button>}
         </div>
       </aside>

@@ -31,9 +31,11 @@ export default function AdminDashboardPage() {
   if (!dashboard) return <main className="admin-dashboard"><div className="admin-skeleton">Cargando datos del negocio…</div></main>;
   if (!dashboard.cycle) return <main className="admin-dashboard"><div className="admin-heading"><div><p className="section-kicker">Instalación limpia</p><h1>Configura La Rocota</h1><p>No hay datos de demostración. Crea la estructura del negocio desde aquí.</p></div></div><section className="admin-onboarding"><Link href="/admin/categories"><strong>1. Categorías</strong><span>Organiza las familias del menú.</span></Link><Link href="/admin/products"><strong>2. Productos</strong><span>Define platos, precios e IVA.</span></Link><Link href="/admin/cycles"><strong>3. Ciclo de venta</strong><span>Publica fechas, cupos y productos.</span></Link></section></main>;
 
-  const capacity = dashboard.cycle.globalCapacity ?? dashboard.products.reduce((sum, product) => sum + product.capacity, 0);
+  // A product without its own cap makes the cycle unlimited unless a global cap exists.
+  const uncapped = dashboard.products.some((product) => product.capacity === null);
+  const capacity = dashboard.cycle.globalCapacity ?? (uncapped ? null : dashboard.products.reduce((sum, product) => sum + (product.capacity ?? 0), 0));
   const units = dashboard.products.reduce((sum, product) => sum + product.units, 0);
-  const fill = capacity > 0 ? Math.min(100, Math.round((units / capacity) * 100)) : 0;
+  const fill = capacity && capacity > 0 ? Math.min(100, Math.round((units / capacity) * 100)) : 0;
 
   return (
     <main className="admin-dashboard">
@@ -48,7 +50,7 @@ export default function AdminDashboardPage() {
         <section className="admin-panel orders-panel"><div className="panel-heading"><div><h2>Pedidos recientes</h2><p>Historial real del ciclo.</p></div><Link href="/admin/orders">Ver todos</Link></div>
           {orders.length ? <div className="orders-table"><div className="table-head"><span>Pedido</span><span>Cliente</span><span>Estado</span><span>Total</span><span>Fecha</span></div>{orders.map((order) => <div className="table-row" key={order.id}><b>{order.orderNumber}</b><span>{order.firstName} {order.lastName}</span><span><i className="order-status">{statusLabels[order.status] ?? order.status}</i></span><b>{money(order.total)}</b><span>{new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short" }).format(new Date(order.createdAt))}</span></div>)}</div> : <div className="admin-empty-state"><ShoppingBag size={22} /><strong>Aún no hay pedidos</strong><span>Los pedidos confirmados desde la tienda aparecerán aquí.</span></div>}
         </section>
-        <aside className="admin-panel cycle-panel"><div className="panel-heading"><div><h2>Capacidad</h2><p>Producción del ciclo.</p></div><PackageCheck size={20} /></div><div className="capacity-number"><strong>{units}</strong><span>de {capacity || 0} cupos</span></div><div className="capacity-track"><span style={{ width: `${fill}%` }} /></div><ul>{dashboard.products.map((product) => <li key={product.name}><span>{product.name}</span><b>{product.units} / {product.capacity}</b></li>)}</ul><Link className="cycle-manage-link" href="/admin/cycles">Editar capacidad</Link></aside>
+        <aside className="admin-panel cycle-panel"><div className="panel-heading"><div><h2>Capacidad</h2><p>Producción del ciclo.</p></div><PackageCheck size={20} /></div><div className="capacity-number"><strong>{units}</strong><span>{capacity === null ? "unidades, sin límite" : `de ${capacity} cupos`}</span></div><div className="capacity-track"><span style={{ width: `${fill}%` }} /></div><ul>{dashboard.products.map((product, index) => <li key={`${product.name}-${index}`}><span>{product.name}</span><b>{product.units} / {product.capacity ?? "sin límite"}</b></li>)}</ul><Link className="cycle-manage-link" href="/admin/cycles">Editar capacidad</Link></aside>
       </div>
     </main>
   );

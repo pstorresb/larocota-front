@@ -152,7 +152,7 @@ export function ProductModal({ product, onClose }: { product: StoreProduct; onCl
                             <div className="option-label">
                               <strong>{option.name}</strong>
                               {option.description && <small>{option.description}</small>}
-                              {delta > 0 && <span>+{money.format(delta)} por unidad adicional</span>}
+                              {delta > 0 && <span>+{money.format(delta)}{option.includedQuantity > 0 ? " por unidad adicional" : option.maxQuantity > 1 ? " cada una" : ""}</span>}
                             </div>
                             {group.selectionType === "multiple" && option.maxQuantity > 1 && (
                               <div className="option-quantity">

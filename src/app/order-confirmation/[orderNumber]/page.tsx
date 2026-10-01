@@ -126,8 +126,8 @@ export default function OrderConfirmationPage() {
         <section className="order-detail-list">
           <h2>Detalle</h2>
           {order.items.map((item) => <div key={item.id}><span><strong>{item.quantity} × {item.name}</strong>{item.snapshotJson.modifiers?.length ? <small>{item.snapshotJson.modifiers.map((modifier) => `${modifier.quantity}× ${modifier.optionName}`).join(" · ")}</small> : null}</span><b>{money.format(Number(item.lineTotal))}</b></div>)}
-          <div className="order-detail-total"><span>Subtotal</span><span>{money.format(Number(order.subtotal))}</span></div>
-          <div className="order-detail-total"><span>IVA</span><span>{money.format(Number(order.taxTotal))}</span></div>
+          <div className="order-detail-total"><span>Subtotal sin IVA</span><span>{money.format(Number(order.subtotal))}</span></div>
+          <div className="order-detail-total"><span>IVA incluido</span><span>{money.format(Number(order.taxTotal))}</span></div>
           <div className="order-detail-total order-detail-grand"><strong>Total</strong><strong>{money.format(Number(order.total))}</strong></div>
         </section>
 

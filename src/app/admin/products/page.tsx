@@ -1,2 +1,3 @@
-import { CatalogCrud } from "@/features/admin/catalog-crud";
-export default function ProductsPage() { return <CatalogCrud mode="products" />; }
+import { ProductManager } from "@/features/admin/product-manager";
+
+export default function AdminProductsPage() { return <ProductManager />; }

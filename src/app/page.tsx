@@ -22,6 +22,7 @@ export default async function HomePage() {
     price: product.basePriceCents / 100,
     available: product.available,
     image: product.imageUrl ? productImageUrl(product.imageUrl) : null,
+    imageCard: product.imageCardUrl ? productImageUrl(product.imageCardUrl) : null,
     imageAlt: product.imageAlt || product.name,
     badge: product.badge,
     modifierGroups: product.modifierGroups,

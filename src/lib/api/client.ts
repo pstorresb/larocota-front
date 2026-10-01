@@ -41,11 +41,12 @@ export type AdminOrderDetail = AdminOrder & {
   history: Array<{ id: string; fromStatus: string | null; toStatus: string; publicNote: string | null; createdAt: string; actorName: string | null }>;
 };
 
-export type CatalogCategory = { id: string; name: string; slug: string; sortOrder: number };
+export type CatalogCategory = { id: string; name: string; sortOrder: number };
 export type ModifierOption = { id: string; name: string; description: string | null; priceDelta: string; priceDeltaCents?: number; includedQuantity: number; defaultQuantity: number; maxQuantity: number; isLocked: boolean; isActive: boolean; sortOrder: number };
 export type ModifierGroup = { id: string; productId: string; name: string; description: string | null; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; sortOrder: number; options: ModifierOption[] };
 export type ModifierSelection = { groupId: string; options: { optionId: string; quantity: number }[] };
-export type CatalogProduct = { id: string; name: string; slug: string; description: string; categoryId: string; category: string; categorySlug: string; imageUrl: string | null; imageAlt: string | null; badge: string | null; basePriceCents: number; taxRateBps: number; available: number; modifierGroups: ModifierGroup[] };
+/** `description` is the short description. `basePriceCents` is the final price, tax included. Image paths lack the API prefix: pass them through `productImageUrl`. */
+export type CatalogProduct = { id: string; name: string; description: string; categoryId: string; category: string; imageUrl: string | null; imageCardUrl: string | null; imageAlt: string | null; badge: string | null; basePriceCents: number; taxRateBps: number; available: number; modifierGroups: ModifierGroup[] };
 export type CatalogSlot = { startsAt: string; endsAt: string; remaining: number | null };
 export type CatalogCycle = {
   id: string; name: string; status: string; opensAt: string; closesAt: string;
@@ -55,8 +56,11 @@ export type CatalogCycle = {
 };
 export type CatalogResponse = { cycle: CatalogCycle | null; categories: CatalogCategory[]; products: CatalogProduct[] };
 
-export type AdminCategory = CatalogCategory & { description: string | null; isActive: boolean; createdAt: string; productCount: number };
-export type AdminProduct = { id: string; categoryId: string; categoryName: string; name: string; slug: string; shortDescription: string; description: string | null; imageKey: string | null; imageAlt: string | null; badge: string | null; basePrice: string; taxRate: string; sortOrder: number; isActive: boolean; createdAt: string };
+export type AdminCategory = { id: string; name: string; sortOrder: number; isActive: boolean; createdAt: string; productCount: number };
+/** `basePrice` is the final price with tax, as a decimal string. */
+export type AdminProduct = { id: string; categoryId: string; categoryName: string; categoryIsActive: boolean; name: string; shortDescription: string; imageUrl: string | null; imageCardUrl: string | null; imageAlt: string | null; badge: string | null; basePrice: string; taxRate: string; sortOrder: number; isActive: boolean; createdAt: string; modifierGroupCount: number };
+export type AdminProductInput = { categoryId: string; name: string; shortDescription: string; imageAlt?: string; badge?: string; basePrice: number; taxRate: number; isActive?: boolean };
+export type ModifierGroupInput = { id?: string; name: string; description?: string; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; sortOrder: number; options: Array<{ id?: string; name: string; description?: string; priceDelta: number; includedQuantity: number; defaultQuantity: number; maxQuantity: number; isLocked: boolean; isActive: boolean; sortOrder: number }> };
 export type CycleStatus = "draft" | "scheduled" | "open" | "closed" | "fulfilled" | "cancelled";
 export type AdminCycle = {
   id: string; name: string; opensAt: string; closesAt: string; fulfillmentStartsAt: string; fulfillmentEndsAt: string;
@@ -129,7 +133,7 @@ export const api = {
   createOrder: (input: CheckoutInput) => request<{ order: { id: string; orderNumber: string; status: OrderStatus; totalCents: number; paymentDeadline: string; slotStartsAt: string; slotEndsAt: string } }>("/orders", { method: "POST", body: JSON.stringify(input) }),
   uploadProof: (orderId: string, file: File) => { const data = new FormData(); data.append("file", file); return request<{ proof: { id: string; status: string; createdAt: string } }>(`/orders/${orderId}/payment-proof`, { method: "POST", body: data }); },
 
-  adminDashboard: () => request<{ cycle: { id: string; name: string; globalCapacity: number | null } | null; metrics: { orders: number; sales: string; averageTicket: string; pendingPayments: number }; products: { name: string; units: number; capacity: number }[] }>("/admin/dashboard"),
+  adminDashboard: () => request<{ cycle: { id: string; name: string; globalCapacity: number | null } | null; metrics: { orders: number; sales: string; averageTicket: string; pendingPayments: number }; products: { name: string; units: number; capacity: number | null }[] }>("/admin/dashboard"),
   adminOrders: (search = "") => request<{ orders: AdminOrder[] }>(`/admin/orders${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   adminOrder: (id: string) => request<{ order: AdminOrderDetail }>(`/admin/orders/${id}`),
   reviewPayment: (proofId: string, input: { decision: "approve" } | { decision: "reject"; reason: string }) => request<{ result: { proofId: string; orderId: string; orderStatus: string } }>(`/admin/payments/${proofId}/review`, { method: "POST", body: JSON.stringify(input) }),
@@ -142,15 +146,17 @@ export const api = {
   updatePickupSettings: (value: PickupSettings) => request<{ key: "pickup"; value: PickupSettings }>("/admin/settings/pickup", { method: "PUT", body: JSON.stringify(value) }),
 
   adminCategories: () => request<{ categories: AdminCategory[] }>("/admin/categories"),
-  createCategory: (input: { name: string; slug: string; description?: string; sortOrder: number; isActive: boolean }) => request<{ category: AdminCategory }>("/admin/categories", { method: "POST", body: JSON.stringify(input) }),
-  updateCategory: (id: string, input: Partial<{ name: string; slug: string; description: string; sortOrder: number; isActive: boolean }>) => request<{ category: AdminCategory }>(`/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  createCategory: (input: { name: string; isActive?: boolean }) => request<{ category: AdminCategory }>("/admin/categories", { method: "POST", body: JSON.stringify(input) }),
+  updateCategory: (id: string, input: Partial<{ name: string; isActive: boolean }>) => request<{ category: AdminCategory }>(`/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  reorderCategories: (ids: string[]) => request<void>("/admin/categories/order", { method: "PUT", body: JSON.stringify({ ids }) }),
   deleteCategory: (id: string) => request<void>(`/admin/categories/${id}`, { method: "DELETE" }),
   adminProducts: () => request<{ products: AdminProduct[] }>("/admin/products"),
   adminProductConfiguration: (id: string) => request<{ groups: ModifierGroup[] }>(`/admin/products/${id}/configuration`),
-  saveProductConfiguration: (id: string, groups: Array<{ id?: string; name: string; description?: string; selectionType: "single" | "multiple"; minSelections: number; maxSelections: number; isActive: boolean; sortOrder: number; options: Array<{ id?: string; name: string; description?: string; priceDelta: number; includedQuantity: number; defaultQuantity: number; maxQuantity: number; isLocked: boolean; isActive: boolean; sortOrder: number }> }>) => request<{ groups: ModifierGroup[] }>(`/admin/products/${id}/configuration`, { method: "PUT", body: JSON.stringify({ groups }) }),
-  createProduct: (input: { categoryId: string; name: string; slug: string; shortDescription: string; description?: string; imageAlt?: string; badge?: string; basePrice: number; taxRate: number; sortOrder: number; isActive: boolean }) => request<{ product: AdminProduct }>("/admin/products", { method: "POST", body: JSON.stringify(input) }),
-  updateProduct: (id: string, input: Partial<{ categoryId: string; name: string; slug: string; shortDescription: string; description: string; imageAlt: string; badge: string; basePrice: number; taxRate: number; sortOrder: number; isActive: boolean }>) => request<{ product: AdminProduct }>(`/admin/products/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
-  uploadProductImage: (id: string, file: File) => { const data = new FormData(); data.append("file", file); return request<{ product: Pick<AdminProduct, "id" | "imageKey" | "imageAlt"> }>(`/admin/products/${id}/image`, { method: "POST", body: data }); },
+  saveProductConfiguration: (id: string, groups: ModifierGroupInput[]) => request<{ groups: ModifierGroup[] }>(`/admin/products/${id}/configuration`, { method: "PUT", body: JSON.stringify({ groups }) }),
+  createProduct: (input: AdminProductInput) => request<{ product: AdminProduct }>("/admin/products", { method: "POST", body: JSON.stringify(input) }),
+  updateProduct: (id: string, input: Partial<AdminProductInput>) => request<{ product: AdminProduct }>(`/admin/products/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  reorderProducts: (ids: string[]) => request<void>("/admin/products/order", { method: "PUT", body: JSON.stringify({ ids }) }),
+  uploadProductImage: (id: string, file: File) => { const data = new FormData(); data.append("file", file); return request<{ product: AdminProduct }>(`/admin/products/${id}/image`, { method: "POST", body: data }); },
   removeProductImage: (id: string) => request<void>(`/admin/products/${id}/image`, { method: "DELETE" }),
   deleteProduct: (id: string) => request<void>(`/admin/products/${id}`, { method: "DELETE" }),
   adminCycles: () => request<{ cycles: AdminCycle[] }>("/admin/cycles"),

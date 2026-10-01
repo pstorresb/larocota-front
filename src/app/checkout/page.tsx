@@ -59,9 +59,10 @@ export default function CheckoutPage() {
   const quoteSignature = JSON.stringify({ cycleId, items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, selections: item.selections })) });
   const [quote, setQuote] = useState<{ signature: string; subtotalCents: number; taxCents: number; totalCents: number } | null>(null);
   const activeQuote = quote?.signature === quoteSignature ? quote : null;
-  const subtotal = activeQuote ? activeQuote.subtotalCents / 100 : cartTotal(items);
+  // Prices are tax-inclusive: the cart total is already what the customer pays; the quote only adds the breakdown.
+  const total = activeQuote ? activeQuote.totalCents / 100 : cartTotal(items);
+  const subtotal = activeQuote ? activeQuote.subtotalCents / 100 : total;
   const tax = activeQuote ? activeQuote.taxCents / 100 : 0;
-  const total = activeQuote ? activeQuote.totalCents / 100 : subtotal;
 
   const allowedModes: FulfillmentType[] = cycle?.fulfillmentModes ?? [];
   const payment = settings.payment;
@@ -288,8 +289,8 @@ export default function CheckoutPage() {
         <div className="summary-cycle"><Clock3 size={18} /><div><strong>{!cycle ? "Sin ciclo activo" : selectedSlot ? `${mode === "pickup" ? "Retiro" : "Entrega"} ${slotRange(selectedSlot.startsAt, selectedSlot.endsAt)}` : `${mode === "pickup" ? "Retiro" : "Entrega"} el ${fulfillmentDate}`}</strong><span>{!cycle ? "Vuelve al menú para revisar la próxima fecha" : !selectedSlot ? "Elige tu franja horaria" : mode === "pickup" ? "Retiro en el local, sin costo" : "Entrega gratuita en Ibarra"}</span></div></div>
         <div className="summary-items">{items.length === 0 ? <p className="summary-empty">Aún no hay productos. Vuelve al menú para elegir.</p> : items.map((item) => <div className="summary-item" key={item.id}><Image src={item.image} alt="" width={62} height={54} unoptimized /><div><strong>{item.quantity} × {item.name}</strong><span>{item.modifiers.length ? item.modifiers.map((modifier) => `${modifier.quantity}× ${modifier.optionName}`).join(" · ") : "Sin modificaciones"}</span></div><b>{money.format(item.unitPrice * item.quantity)}</b></div>)}</div>
         <div className="summary-totals">
-          <div><span>Subtotal</span><span>{money.format(subtotal)}</span></div>
-          <div><span>IVA</span><span>{money.format(tax)}</span></div>
+          <div><span>Subtotal sin IVA</span><span>{activeQuote ? money.format(subtotal) : "…"}</span></div>
+          <div><span>IVA incluido</span><span>{activeQuote ? money.format(tax) : "…"}</span></div>
           <div className="delivery-total"><span>{mode === "pickup" ? "Retiro" : "Entrega"}</span><strong>Gratis</strong></div>
           <div className="summary-total"><strong>Total a transferir</strong><strong>{money.format(total)}</strong></div>
         </div>

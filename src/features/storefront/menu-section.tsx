@@ -1,14 +1,13 @@
 "use client";
 
-import Image from "next/image";
 import { CalendarClock, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { useCart, useCartHydrated } from "@/features/cart/cart-store";
+import { ProductCardView } from "@/features/storefront/product-card-view";
 import { ProductModal } from "@/features/storefront/product-modal";
-import { PRODUCT_PLACEHOLDER, type StoreProduct } from "@/features/storefront/types";
+import type { StoreProduct } from "@/features/storefront/types";
 import type { CatalogCycle } from "@/lib/api/client";
-import { money, shortTime, weekdayLongDate } from "@/lib/order-status";
+import { shortTime, weekdayLongDate } from "@/lib/order-status";
 
 const ALL = "Todo";
 
@@ -38,7 +37,7 @@ export function MenuSection({ cycle, categories, products, unavailable }: Props)
     <section className="menu-section" id="menu">
       <div className="menu-heading">
         <div><p className="section-kicker">{cycle?.name ?? "Menú"}</p><h2>¿Qué te provoca?</h2></div>
-        <p className="menu-note">Preparamos cantidades limitadas según los pedidos confirmados. Los precios incluyen IVA.</p>
+        <p className="menu-note">Preparamos cantidades limitadas según los pedidos confirmados. Precios finales, IVA incluido.</p>
       </div>
       {closedBanner && products.length > 0 && <p className="menu-banner"><CalendarClock size={20} /> {closedBanner}</p>}
       {cartReset && <p className="menu-cart-notice" role="status">Tu selección anterior era de otro ciclo, así que la vaciamos. Elige de nuevo del menú actual.</p>}
@@ -54,25 +53,11 @@ export function MenuSection({ cycle, categories, products, unavailable }: Props)
           const soldOut = product.available === 0;
           const addLabel = soldOut ? `${product.name} agotado` : !isOpen ? `${product.name}: los pedidos aún no abren` : `Personalizar ${product.name}`;
           return (
-            <article className="product-card" key={product.id}>
-              <div className="product-visual">
-                {product.image
-                  ? <Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 760px) 100vw, (max-width: 950px) 50vw, 33vw" unoptimized />
-                  : <div className="brand-product-placeholder"><Image src={PRODUCT_PLACEHOLDER} alt="Producto La Rocota sin fotografía" width={334} height={170} /></div>}
-                {soldOut ? <Badge className="product-badge" tone="soldout">Agotado</Badge> : product.badge && <Badge className="product-badge" tone="brand">{product.badge}</Badge>}
-              </div>
-              <div className="product-copy">
-                <h3>{product.name}</h3>
-                <p>{product.description}</p>
-                <div className="product-footer">
-                  <span className="product-price">
-                    {money.format(product.price)}
-                    {product.available > 0 && product.available <= 5 && <small>Quedan {product.available}</small>}
-                  </span>
-                  <button className="add-button" type="button" aria-label={addLabel} disabled={soldOut || !isOpen} onClick={() => setSelectedProduct(product)}><Plus size={22} /></button>
-                </div>
-              </div>
-            </article>
+            <ProductCardView
+              key={product.id}
+              product={{ ...product, image: product.imageCard ?? product.image }}
+              action={<button className="add-button" type="button" aria-label={addLabel} disabled={soldOut || !isOpen} onClick={() => setSelectedProduct(product)}><Plus size={22} /></button>}
+            />
           );
         })}
         {unavailable && (
